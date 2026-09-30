@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { findTool, tools } from "./tools.ts";
 
 // key 从环境变量 ANTHROPIC_API_KEY 读取，不要写进代码
 const client = new Anthropic();
@@ -24,46 +25,87 @@ export function findModel(id: string): ModelOption | undefined {
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
-/** 流式调用 Claude。onText 每来一段文字就调用一次；返回完整文本和结束原因。 */
+const MAX_TOOL_TURNS = 8;
+
+/** 流式调用 Claude，遇到工具调用就执行并继续，直到它给出最终回复。 */
 export async function streamChat(opts: {
   model: ModelOption;
   system: string;
   messages: ChatMessage[];
   signal: AbortSignal;
   onText: (delta: string) => void;
+  onTool: (label: string) => void;
 }): Promise<{ text: string; stopReason: string | null }> {
   const { model } = opts;
-  const stream = client.beta.messages.stream(
-    {
-      model: model.id,
-      max_tokens: 64000,
-      // 自动缓存最后一个可缓存块：长对话每轮只需为新增内容付全价
-      cache_control: { type: "ephemeral" },
-      ...(opts.system ? { system: opts.system } : {}),
-      ...(model.effort ? { output_config: { effort: model.effort } } : {}),
-      // 被安全分类器拒绝时，服务器自动换模型重跑
-      ...(model.fallback
-        ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }
-        : {}),
-      messages: opts.messages,
-    },
-    { signal: opts.signal },
-  );
-
+  const messages: Anthropic.Beta.BetaMessageParam[] = [...opts.messages];
   let text = "";
-  stream.on("text", (delta) => {
-    text += delta;
-    opts.onText(delta);
-  });
+  let stopReason: string | null = null;
 
-  try {
-    const final = await stream.finalMessage();
-    return { text, stopReason: final.stop_reason };
-  } catch (err) {
-    // 用户中途停止：保留已生成的部分
-    if (opts.signal.aborted) return { text, stopReason: "aborted" };
-    throw err;
+  for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
+    const stream = client.beta.messages.stream(
+      {
+        model: model.id,
+        max_tokens: 64000,
+        // 自动缓存最后一个可缓存块：长对话每轮只需为新增内容付全价
+        cache_control: { type: "ephemeral" },
+        ...(opts.system ? { system: opts.system } : {}),
+        ...(model.effort ? { output_config: { effort: model.effort } } : {}),
+        ...(tools.length ? { tools: tools.map((t) => t.def) } : {}),
+        // 被安全分类器拒绝时，服务器自动换模型重跑
+        ...(model.fallback
+          ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }
+          : {}),
+        messages,
+      },
+      { signal: opts.signal },
+    );
+
+    // 同一条回复里前后两轮文字之间补个空行
+    let separate = text !== "";
+    stream.on("text", (delta) => {
+      if (separate) {
+        separate = false;
+        text += "\n\n";
+        opts.onText("\n\n");
+      }
+      text += delta;
+      opts.onText(delta);
+    });
+
+    let final: Anthropic.Beta.BetaMessage;
+    try {
+      final = await stream.finalMessage();
+    } catch (err) {
+      // 用户中途停止：保留已生成的部分
+      if (opts.signal.aborted) return { text, stopReason: "aborted" };
+      throw err;
+    }
+    stopReason = final.stop_reason;
+    if (stopReason !== "tool_use") break;
+
+    // 原样带回 assistant 的完整内容（含 thinking 块），再附上工具结果
+    messages.push({ role: "assistant", content: final.content });
+    const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+    for (const block of final.content) {
+      if (block.type !== "tool_use") continue;
+      const tool = findTool(block.name);
+      try {
+        if (!tool) throw new Error(`未知工具 ${block.name}`);
+        opts.onTool(tool.label(block.input));
+        results.push({ type: "tool_result", tool_use_id: block.id, content: await tool.run(block.input) });
+      } catch (err) {
+        console.error(`tool ${block.name}:`, err);
+        results.push({
+          type: "tool_result",
+          tool_use_id: block.id,
+          is_error: true,
+          content: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    messages.push({ role: "user", content: results });
   }
+  return { text, stopReason };
 }
 
 export function describeError(err: unknown): string {

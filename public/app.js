@@ -27,7 +27,7 @@ function bubble(role, text) {
   wrap.className = "msg " + role;
   const b = document.createElement("div");
   b.className = "bubble";
-  if (role === "user") b.textContent = text;
+  if (role === "user" || role === "tool") b.textContent = text;
   else b.innerHTML = renderMarkdown(text);
   wrap.append(b);
   els.messages.append(wrap);
@@ -121,6 +121,12 @@ async function send(text) {
       if (event === "text") {
         acc += data;
         out.innerHTML = renderMarkdown(acc);
+        scrollDown();
+      } else if (event === "tool") {
+        const note = bubble("tool", "");
+        note.textContent = data;
+        note.parentElement.remove();
+        out.parentElement.before(note.parentElement);
         scrollDown();
       } else if (event === "error") failed = data;
       else if (event === "done") { state.conv = data; els.title.textContent = data.title; }

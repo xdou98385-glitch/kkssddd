@@ -74,3 +74,4 @@ dialog textarea { width: 100%; background: var(--panel); border: 1px solid var(-
   header #menu-btn { display: block; }
 }
 #logout { margin-right: auto; }
+.msg.tool { margin-bottom: 8px; } .msg.tool .bubble { padding: 0; font-size: 13px; color: var(--muted); }

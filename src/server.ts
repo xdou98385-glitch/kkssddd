@@ -6,6 +6,8 @@ import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import * as db from "./db.ts";
 import { authEnabled, login, logout, requireLogin } from "./auth.ts";
+import { DEFAULT_SYSTEM, MEMORY_GUIDE } from "./persona.ts";
+import { coreMemoryBlock, tools } from "./tools.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
@@ -30,7 +32,9 @@ app.get("/vendor/purify.js", serveStatic({ path: "node_modules/dompurify/dist/pu
 
 app.get("/api/models", (c) => c.json({ models: MODELS, default: DEFAULT_MODEL }));
 
-app.get("/api/settings", (c) => c.json({ system_prompt: db.getSetting("system_prompt") }));
+const persona = () => db.getSetting("system_prompt") || DEFAULT_SYSTEM;
+
+app.get("/api/settings", (c) => c.json({ system_prompt: persona() }));
 app.put("/api/settings", async (c) => {
   const body = await c.req.json<{ system_prompt?: string }>();
   db.setSetting("system_prompt", String(body.system_prompt ?? ""));
@@ -89,10 +93,13 @@ app.post("/api/conversations/:id/chat", async (c) => {
       const history = db.listMessages(id).map((m) => ({ role: m.role, content: m.content }));
       const result = await streamChat({
         model,
-        system: db.getSetting("system_prompt"),
+        system: [persona(), tools.length ? MEMORY_GUIDE : "", await coreMemoryBlock()]
+          .filter(Boolean)
+          .join("\n\n"),
         messages: history,
         signal: abort.signal,
         onText: (delta) => void sse.writeSSE({ event: "text", data: JSON.stringify(delta) }),
+        onTool: (label) => void sse.writeSSE({ event: "tool", data: JSON.stringify(label) }),
       });
       text = result.text;
       if (result.stopReason === "refusal")

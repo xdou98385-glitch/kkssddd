@@ -3,8 +3,10 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    # 只绑本机：外网访问不到，靠 Tailscale serve 转发出来
-    ports:
-      - "127.0.0.1:3000:3000"
+    # 用宿主机网络：这样容器里的 127.0.0.1:5230 就是服务器上的 Memos。
+    # 同时让站点只监听本机，外网访问不到，靠 Tailscale serve/funnel 转发出来。
+    network_mode: host
+    environment:
+      HOST: 127.0.0.1
     volumes:
       - ./data:/data

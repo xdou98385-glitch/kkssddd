@@ -35,6 +35,23 @@ node --env-file=.env src/server.ts
 
 更新：`git pull && docker compose up -d --build`。数据在 `./data/chat.db`，备份直接复制这个文件。
 
+## 记忆（Memos）
+
+在 `.env` 里填 `MEMOS_URL` 和 `MEMOS_TOKEN`（Memos 里 设置 → 我的账号 → Access Tokens）就会启用，不填则没有记忆功能，其他照常用。
+
+- Claude 会自己判断什么时候翻记忆、什么时候存记忆，聊天里会有一行小字提示（🔎 / 📝）。
+- 它存的笔记会带 `#claude` 标签，方便你在 Memos 里区分，也可以随时编辑或删除。
+- 你在 Memos 里给笔记加上 `#core` 标签，那条就会在每次对话开头自动读进去，适合放最重要的长期信息。
+- 容器用宿主机网络，所以 Memos 地址填服务器本机的，比如 `http://127.0.0.1:5230`。
+
+验证 token 和地址对不对（在服务器上）：
+
+```bash
+curl -s -H "Authorization: Bearer 你的token" "http://127.0.0.1:5230/api/v1/memos?pageSize=1"
+```
+
+能返回笔记的 JSON 就是通的。
+
 ## 放到公网（Tailscale Funnel）
 
 不想每次开 Tailscale 的话，用 Funnel 把同一个地址开放到公网：
@@ -64,7 +81,10 @@ tailscale funnel status
 ```
 src/server.ts   路由 + SSE 流式接口
 src/auth.ts     登录（签名 cookie + 防暴力猜密码）
-src/claude.ts   调 Claude（模型列表、流式、缓存、拒绝回退）
+src/claude.ts   调 Claude（模型列表、流式、工具循环、缓存、拒绝回退）
+src/persona.ts  默认人设
+src/memos.ts    Memos 读写
+src/tools.ts    给 Claude 用的工具（搜索/保存记忆）
 src/db.ts       SQLite（对话、消息、设置）
 public/         前端（index.html / login.html / app.js / style.css / PWA 清单）
 ```
