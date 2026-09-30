@@ -20,6 +20,19 @@ async function memosFetch(path: string, init?: RequestInit): Promise<any> {
   return res.json();
 }
 
+/** 连接状态，给设置页和启动日志用：没配置 / 已连接 / 连不上（带原因） */
+export async function memosStatus(): Promise<{ enabled: boolean; ok?: boolean; error?: string }> {
+  if (!memosEnabled) return { enabled: false };
+  try {
+    await memosFetch("/api/v1/memos?pageSize=1");
+    return { enabled: true, ok: true };
+  } catch (err) {
+    const e = err as Error & { cause?: { code?: string; message?: string } };
+    const why = e.cause ? ` (${e.cause.code ?? e.cause.message})` : "";
+    return { enabled: true, ok: false, error: e.message + why };
+  }
+}
+
 // 个人笔记量不大，直接拉下来在本地搜；缓存 30 秒，避免每条消息都重拉
 let cache: { at: number; memos: Memo[] } | null = null;
 const MAX_PAGES = 10;

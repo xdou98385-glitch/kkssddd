@@ -154,6 +154,8 @@ dialog h2 { margin: 0 0 16px; font: 500 17px var(--serif); letter-spacing: 0.14e
 .field textarea:focus, .field select:focus { border-color: var(--muted); }
 dialog button { padding: 9px 18px; border-radius: 999px; background: transparent; border: 1px solid var(--hairline); }
 dialog button.primary { background: var(--ink); color: var(--ink-text); border-color: transparent; }
+.memory-status { margin: -4px 0 14px; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.memory-status.bad { color: var(--danger); }
 .danger-zone { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 #reset { color: var(--danger); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }

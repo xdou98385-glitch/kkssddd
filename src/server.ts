@@ -11,6 +11,7 @@ import { buildHistory, maybeSummarize } from "./context.ts";
 import { isImageName, readImage, saveImage } from "./uploads.ts";
 import { DEFAULT_SYSTEM, MEMORY_GUIDE } from "./persona.ts";
 import { coreMemoryBlock, tools } from "./tools.ts";
+import { memosStatus } from "./memos.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
@@ -33,6 +34,8 @@ app.get("/api/session", (c) => c.json({ auth: authEnabled }));
 // 前端依赖直接从 node_modules 提供，省掉构建步骤
 app.get("/vendor/marked.js", serveStatic({ path: "node_modules/marked/lib/marked.umd.js" }));
 app.get("/vendor/purify.js", serveStatic({ path: "node_modules/dompurify/dist/purify.min.js" }));
+
+app.get("/api/memory/status", async (c) => c.json(await memosStatus()));
 
 app.get("/api/models", (c) => c.json({ models: MODELS, default: DEFAULT_MODEL }));
 
@@ -139,6 +142,14 @@ app.post("/api/thread/chat", async (c) => {
 app.use("*", serveStatic({ root: "public" }));
 
 const port = Number(process.env.PORT ?? 3000);
-serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, () =>
-  console.log(`listening on http://localhost:${port}`),
-);
+serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, async () => {
+  console.log(`listening on http://localhost:${port}`);
+  const s = await memosStatus();
+  console.log(
+    !s.enabled
+      ? "memory: OFF (MEMOS_URL / MEMOS_TOKEN not set in the container)"
+      : s.ok
+        ? "memory: ON (Memos reachable)"
+        : `memory: ERROR (${s.error})`,
+  );
+});

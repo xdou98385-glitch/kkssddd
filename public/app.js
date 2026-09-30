@@ -336,8 +336,22 @@ els.input.addEventListener("input", autosize);
 // ---- 设置 ----
 $("settings-btn").onclick = async () => {
   els.systemPrompt.value = (await api("/settings")).system_prompt;
+  showMemoryStatus("检查记忆连接…", false);
   els.settings.showModal();
+  try {
+    const s = await api("/memory/status");
+    if (!s.enabled) showMemoryStatus("记忆：未配置（服务器没读到 MEMOS_URL / MEMOS_TOKEN）", true);
+    else if (s.ok) showMemoryStatus("记忆：已连接 Memos", false);
+    else showMemoryStatus("记忆：连不上 Memos。" + s.error, true);
+  } catch {
+    showMemoryStatus("", false);
+  }
 };
+function showMemoryStatus(text, bad) {
+  const el = $("memory-status");
+  el.textContent = text;
+  el.classList.toggle("bad", bad);
+}
 els.settings.addEventListener("close", async () => {
   if (els.settings.returnValue === "save") {
     await api("/settings", { method: "PUT", body: { system_prompt: els.systemPrompt.value } });
