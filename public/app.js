@@ -100,7 +100,7 @@ function renderBatch(msgs) {
 }
 
 function showEmpty() {
-  els.messages.innerHTML = '<div class="empty"><div class="orb"></div><span>想聊点什么？</span></div>';
+  els.messages.innerHTML = '<div class="empty"><img class="hero" src="/hero.png" alt=""><span>想聊点什么？</span></div>';
   state.firstId = null;
   state.lastDay = null;
 }
