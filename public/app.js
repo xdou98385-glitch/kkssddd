@@ -13,6 +13,7 @@ async function api(path, opts = {}) {
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
+  if (res.status === 401) { location.href = "/login"; throw new Error("unauthorized"); }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
   return res.json();
 }
@@ -114,6 +115,7 @@ async function send(text) {
       body: JSON.stringify({ content: text }),
       signal: state.abort.signal,
     });
+    if (res.status === 401) { location.href = "/login"; return; }
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
     await readSSE(res.body, (event, data) => {
       if (event === "text") {
@@ -193,6 +195,10 @@ els.model.addEventListener("change", async () => {
   localStorage.setItem("model", els.model.value);
 });
 
+$("logout").onclick = async () => {
+  await fetch("/logout", { method: "POST" });
+  location.href = "/login";
+};
 $("new-chat").onclick = newConv;
 $("menu-btn").onclick = () => document.body.classList.add("side-open");
 $("scrim").onclick = () => document.body.classList.remove("side-open");
@@ -211,4 +217,5 @@ els.settings.addEventListener("close", async () => {
   els.model.replaceChildren(...models.map((m) => new Option(m.label, m.id)));
   els.model.value = localStorage.getItem("model") || def;
   await loadList();
+  if ((await api("/session")).auth) $("logout").hidden = false;
 })();

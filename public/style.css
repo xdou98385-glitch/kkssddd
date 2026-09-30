@@ -73,3 +73,4 @@ dialog textarea { width: 100%; background: var(--panel); border: 1px solid var(-
   body.side-open #scrim { display: block; position: fixed; z-index: 10; inset: 0; background: rgba(0,0,0,.5); }
   header #menu-btn { display: block; }
 }
+#logout { margin-right: auto; }

@@ -1,18 +1,28 @@
+import { readFileSync } from "node:fs";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { basicAuth } from "hono/basic-auth";
+import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import * as db from "./db.ts";
+import { authEnabled, login, logout, requireLogin } from "./auth.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
 
-// 可选的站点密码（放在 Tailscale 私网里的话可以不设）
-const password = process.env.APP_PASSWORD;
-if (password) {
-  app.use("*", basicAuth({ username: process.env.APP_USER ?? "me", password }));
-}
+app.use("*", secureHeaders());
+// 每次都让浏览器回来问一遍服务器，保证登录检查不被缓存绕过
+app.use("*", async (c, next) => {
+  await next();
+  c.header("Cache-Control", "no-cache");
+});
+
+// 设了 APP_PASSWORD 就要先登录（放公网必须设）
+app.get("/login", (c) => c.html(readFileSync("public/login.html", "utf8")));
+app.post("/login", login);
+app.use("*", requireLogin);
+app.post("/logout", logout);
+app.get("/api/session", (c) => c.json({ auth: authEnabled }));
 
 // 前端依赖直接从 node_modules 提供，省掉构建步骤
 app.get("/vendor/marked.js", serveStatic({ path: "node_modules/marked/lib/marked.umd.js" }));

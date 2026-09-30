@@ -35,18 +35,36 @@ node --env-file=.env src/server.ts
 
 更新：`git pull && docker compose up -d --build`。数据在 `./data/chat.db`，备份直接复制这个文件。
 
+## 放到公网（Tailscale Funnel）
+
+不想每次开 Tailscale 的话，用 Funnel 把同一个地址开放到公网：
+
+```bash
+# 1. 先在 .env 里设好 APP_PASSWORD（长随机串），然后
+docker compose up -d
+# 2. 再开 Funnel（先用 `tailscale serve reset` 清掉旧的 serve 配置也行）
+sudo tailscale funnel --bg 3000
+tailscale funnel status
+```
+
+第一次可能要按提示去 Tailscale 后台授权 Funnel。之后任何设备用那个 `https://….ts.net` 地址都能打开，输密码登录（30 天免登录）。
+
+登录带失败次数限制：同一 IP 连错 5 次锁 15 分钟，全站一小时连错 40 次也会锁 15 分钟。
+
+关掉公网：`sudo tailscale funnel --bg off 3000`（或 `tailscale funnel reset`），恢复成只有你的设备能访问：`sudo tailscale serve --bg 3000`。
+
 ## 注意
 
 - API key 只放在服务器的 `.env` 里，`.env` 已被 git 忽略，别提交。
 - 去 Anthropic 后台设置月度花费上限。
-- 想再加一层密码：在 `.env` 里设 `APP_PASSWORD`（用户名默认 `me`）。
-- 不要用 `tailscale funnel`，那会把站点暴露到公网。
+- 放公网时 `APP_PASSWORD` 必须设，而且要够长。
 
 ## 结构
 
 ```
 src/server.ts   路由 + SSE 流式接口
+src/auth.ts     登录（签名 cookie + 防暴力猜密码）
 src/claude.ts   调 Claude（模型列表、流式、缓存、拒绝回退）
 src/db.ts       SQLite（对话、消息、设置）
-public/         前端（index.html / app.js / style.css / PWA 清单）
+public/         前端（index.html / login.html / app.js / style.css / PWA 清单）
 ```
