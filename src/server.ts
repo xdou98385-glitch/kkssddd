@@ -19,8 +19,7 @@ app.use("*", secureHeaders());
 // 每次都让浏览器回来问一遍服务器，保证登录检查不被缓存绕过
 app.use("*", async (c, next) => {
   await next();
-  if (/^\/(hero\.png|icon-)/.test(c.req.path)) c.header("Cache-Control", "public, max-age=604800");
-  else if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "no-cache");
+  if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "no-cache");
 });
 
 // 设了 APP_PASSWORD 就要先登录（放公网必须设）
