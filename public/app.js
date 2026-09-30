@@ -6,7 +6,7 @@ const els = {
 };
 
 const MAX_IMAGES = 4;
-const state = { busy: false, abort: null, hasMore: false, firstId: null, loadingMore: false, pending: [] };
+const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true };
 
 async function api(path, opts = {}) {
   const res = await fetch("/api" + path, {
@@ -21,11 +21,15 @@ async function api(path, opts = {}) {
 
 const renderMarkdown = (text) => DOMPurify.sanitize(marked.parse(text, { breaks: true }));
 
-function bubble(role, text, images = []) {
+const pad = (n) => String(n).padStart(2, "0");
+const fmtTime = (ts) => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const dayKey = (ts) => { const d = new Date(ts); return `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`; };
+
+function bubble(role, text, images = [], ts = null) {
   const wrap = document.createElement("div");
   wrap.className = "msg " + role;
   const b = document.createElement("div");
-  b.className = "bubble";
+  b.className = "bubble" + (role === "user" ? " bubble-user" : "");
   if (images.length) {
     const pics = document.createElement("div");
     pics.className = "pics";
@@ -33,6 +37,8 @@ function bubble(role, text, images = []) {
       const img = document.createElement("img");
       img.src = "/uploads/" + name;
       img.loading = "lazy";
+      img.alt = "";
+      img.onload = () => { if (state.stick) els.messages.scrollTop = els.messages.scrollHeight; };
       img.onclick = () => openLightbox(img.src);
       pics.append(img);
     }
@@ -41,7 +47,31 @@ function bubble(role, text, images = []) {
   if (role === "assistant") b.insertAdjacentHTML("beforeend", renderMarkdown(text));
   else if (text) b.append(document.createTextNode(text));
   wrap.append(b);
+  if (ts) setTime(wrap, ts);
   return { wrap, b };
+}
+
+function setTime(wrap, ts) {
+  wrap.querySelector(".time")?.remove();
+  const t = document.createElement("div");
+  t.className = "time";
+  t.textContent = fmtTime(ts);
+  wrap.append(t);
+}
+
+function toolNote(label) {
+  const n = document.createElement("div");
+  n.className = "tool";
+  n.textContent = label;
+  return n;
+}
+
+function dayDivider(key) {
+  const d = document.createElement("div");
+  d.className = "day";
+  d.dataset.day = key;
+  d.textContent = key;
+  return d;
 }
 
 function openLightbox(src) {
@@ -58,23 +88,41 @@ function scrollDown(force) {
 }
 
 // ---- 加载历史 ----
-function renderMessages(msgs, { prepend = false } = {}) {
-  const nodes = msgs.map((m) => bubble(m.role, m.content, m.images).wrap);
-  if (prepend) els.messages.prepend(...nodes);
-  else els.messages.replaceChildren(...nodes);
-  if (msgs.length) state.firstId = msgs[0].id;
+function renderBatch(msgs) {
+  const nodes = [];
+  let day = null;
+  for (const m of msgs) {
+    const k = dayKey(m.created_at);
+    if (k !== day) { nodes.push(dayDivider(k)); day = k; }
+    nodes.push(bubble(m.role, m.content, m.images, m.created_at).wrap);
+  }
+  return { nodes, lastDay: day };
+}
+
+function showEmpty() {
+  els.messages.innerHTML = '<div class="empty"><div class="orb"></div><span>想聊点什么？</span></div>';
+  state.firstId = null;
+  state.lastDay = null;
 }
 
 async function loadThread() {
-  const data = await api("/thread?limit=40");
-  els.model.value = data.conversation.model;
-  state.hasMore = data.hasMore;
-  if (!data.messages.length) {
-    els.messages.innerHTML = '<div class="empty">想聊点什么？</div>';
-    state.firstId = null;
+  els.messages.innerHTML = '<div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div>';
+  let data;
+  try {
+    data = await api("/thread?limit=40");
+  } catch (err) {
+    if (err.message === "unauthorized") return;
+    els.messages.innerHTML = '<div class="fail"><span>连不上服务器</span><button type="button">重试</button></div>';
+    els.messages.querySelector("button").onclick = loadThread;
     return;
   }
-  renderMessages(data.messages);
+  els.model.value = data.conversation.model;
+  state.hasMore = data.hasMore;
+  if (!data.messages.length) return showEmpty();
+  const { nodes, lastDay } = renderBatch(data.messages);
+  els.messages.replaceChildren(...nodes);
+  state.firstId = data.messages[0].id;
+  state.lastDay = lastDay;
   scrollDown(true);
 }
 
@@ -86,14 +134,20 @@ async function loadEarlier() {
     const m = els.messages;
     const prevHeight = m.scrollHeight;
     state.hasMore = data.hasMore;
-    renderMessages(data.messages, { prepend: true });
+    const { nodes, lastDay } = renderBatch(data.messages);
+    const first = m.querySelector(".day");
+    if (first && first.dataset.day === lastDay && first === m.firstElementChild) first.remove();
+    m.prepend(...nodes);
+    if (data.messages.length) state.firstId = data.messages[0].id;
     m.scrollTop += m.scrollHeight - prevHeight; // 保持当前位置不跳
   } finally {
     state.loadingMore = false;
   }
 }
 els.messages.addEventListener("scroll", () => {
-  if (els.messages.scrollTop < 80) loadEarlier();
+  const m = els.messages;
+  state.stick = m.scrollHeight - m.scrollTop - m.clientHeight < 120; // 在底部附近时，图片加载完要补滚
+  if (m.scrollTop < 80) loadEarlier();
 });
 
 // ---- 图片：压缩到长边 1568px 的 JPEG 再上传，省流量也省 token ----
@@ -149,7 +203,8 @@ function renderChips() {
       const img = document.createElement("img");
       img.src = p.preview;
       const x = document.createElement("button");
-      x.type = "button"; x.textContent = "✕";
+      x.type = "button"; x.setAttribute("aria-label", "移除");
+      x.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
       x.onclick = () => { state.pending = state.pending.filter((q) => q !== p); renderChips(); };
       chip.append(img, x);
       return chip;
@@ -167,9 +222,16 @@ els.input.addEventListener("paste", (e) => {
 // ---- 发送 ----
 async function send(text, images) {
   els.messages.querySelector(".empty")?.remove();
-  const mine = bubble("user", text, images);
+  const sentAt = Date.now();
+  if (state.lastDay !== dayKey(sentAt)) {
+    els.messages.append(dayDivider(dayKey(sentAt)));
+    state.lastDay = dayKey(sentAt);
+  }
+  const mine = bubble("user", text, images, sentAt);
+  mine.wrap.classList.add("enter");
   els.messages.append(mine.wrap);
   const reply = bubble("assistant", "");
+  reply.wrap.classList.add("enter");
   reply.b.classList.add("cursor");
   els.messages.append(reply.wrap);
   scrollDown(true);
@@ -193,8 +255,7 @@ async function send(text, images) {
         reply.b.innerHTML = renderMarkdown(acc);
         scrollDown();
       } else if (event === "tool") {
-        const note = bubble("tool", data);
-        reply.wrap.before(note.wrap);
+        reply.wrap.before(toolNote(data));
         scrollDown();
       } else if (event === "error") failed = data;
     });
@@ -202,15 +263,17 @@ async function send(text, images) {
     if (err.name !== "AbortError") failed = err.message;
   } finally {
     reply.b.classList.remove("cursor");
-    if (!acc) reply.wrap.remove();
+    if (acc) setTime(reply.wrap, Date.now());
+    else reply.wrap.remove();
     if (failed) {
       const e = bubble("assistant", "");
       e.b.classList.add("err");
-      e.b.textContent = "⚠ " + failed;
+      e.b.textContent = failed;
       els.messages.append(e.wrap);
+      scrollDown();
     }
     setBusy(false);
-    // 刚发的这一轮在数据库里有 id 了，重新对一下最早那条的位置
+    // 这是第一条消息：重新加载一次，拿到数据库里的 id 才能往前翻页
     if (state.firstId == null && !failed) loadThread();
   }
 }
@@ -238,8 +301,8 @@ async function readSSE(stream, onEvent) {
 
 function setBusy(busy) {
   state.busy = busy;
-  els.send.textContent = busy ? "停止" : "发送";
-  els.send.classList.toggle("primary", !busy);
+  els.send.classList.toggle("busy", busy);
+  els.send.setAttribute("aria-label", busy ? "停止" : "发送");
 }
 
 function autosize() {

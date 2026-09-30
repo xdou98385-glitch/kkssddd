@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111318">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#efefed">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121314">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Chat">
@@ -16,29 +17,41 @@
 <body>
   <main>
     <header>
-      <div id="title">Claude</div>
-      <button id="settings-btn" class="icon" title="设置">⚙</button>
+      <span class="spacer"></span>
+      <h1 id="title">Claude</h1>
+      <button id="settings-btn" class="round" type="button" aria-label="设置">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      </button>
     </header>
-    <div id="messages"><div class="empty">想聊点什么？</div></div>
+
+    <div id="messages" aria-live="polite">
+      <div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
+    </div>
+
     <div id="attachments"></div>
     <form id="composer">
-      <button id="attach" class="icon" type="button" title="发图片">＋</button>
+      <button id="attach" class="round flat" type="button" aria-label="发图片">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
       <input id="file" type="file" accept="image/*" multiple hidden>
-      <textarea id="input" rows="1" placeholder="发消息…" enterkeyhint="send"></textarea>
-      <button id="send" class="primary" type="submit">发送</button>
+      <textarea id="input" rows="1" placeholder="说点什么…" enterkeyhint="send"></textarea>
+      <button id="send" class="round solid" type="submit" aria-label="发送">
+        <svg class="i-send" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        <svg class="i-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+      </button>
     </form>
   </main>
 
   <dialog id="settings">
     <form method="dialog">
-      <h3>设置</h3>
-      <label class="field">模型
+      <h2>设置</h2>
+      <label class="field"><span>模型</span>
         <select id="model"></select>
       </label>
-      <label class="field">系统提示词
+      <label class="field"><span>系统提示词</span>
         <textarea id="system-prompt" rows="9"></textarea>
+        <small>每次对话都会带上，决定它怎么说话、怎么称呼你。</small>
       </label>
-      <p class="hint">每次对话都会带上，决定它怎么说话、怎么称呼你。</p>
       <div class="danger-zone">
         <button id="reset" type="button">清空聊天重新开始</button>
         <button id="logout" type="button" hidden>退出登录</button>

@@ -50,6 +50,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   images: string[];
+  created_at: number;
 }
 
 interface MessageRow {
@@ -57,12 +58,14 @@ interface MessageRow {
   role: "user" | "assistant";
   content: string;
   images: string | null;
+  created_at: number;
 }
 const toMessage = (r: MessageRow): Message => ({
   id: r.id,
   role: r.role,
   content: r.content,
   images: r.images ? JSON.parse(r.images) : [],
+  created_at: r.created_at,
 });
 
 const now = () => Date.now();
@@ -109,7 +112,7 @@ export function messagePage(
 ): { messages: Message[]; hasMore: boolean } {
   const rows = db
     .prepare(
-      `SELECT id, role, content, images FROM messages
+      `SELECT id, role, content, images, created_at FROM messages
        WHERE conversation_id = ? AND id < ? ORDER BY id DESC LIMIT ?`,
     )
     .all(conversationId, before ?? Number.MAX_SAFE_INTEGER, limit + 1) as unknown as MessageRow[];
@@ -122,7 +125,7 @@ export function windowMessages(conversationId: string, afterId: number): Message
   return (
     db
       .prepare(
-        `SELECT id, role, content, images FROM messages
+        `SELECT id, role, content, images, created_at FROM messages
          WHERE conversation_id = ? AND id > ? ORDER BY id`,
       )
       .all(conversationId, afterId) as unknown as MessageRow[]

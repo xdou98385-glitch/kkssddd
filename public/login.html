@@ -3,27 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111318">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#efefed">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121314">
   <link rel="icon" href="/icon.svg">
   <link rel="apple-touch-icon" href="/icon-180.png">
   <title>登录</title>
   <style>
-    :root { --bg:#111318; --panel:#181b22; --line:#262a34; --text:#e6e8ee; --accent:#7c9cff; --danger:#ff6b6b; color-scheme: dark; }
-    @media (prefers-color-scheme: light) { :root { --bg:#fff; --panel:#f5f6f8; --line:#e3e5ea; --text:#1a1c21; --accent:#3b5bdb; --danger:#d63b3b; color-scheme: light; } }
-    * { box-sizing: border-box; }
-    body { margin:0; min-height:100dvh; display:grid; place-items:center; background:var(--bg); color:var(--text); font:16px/1.5 -apple-system,"PingFang SC",system-ui,sans-serif; }
-    form { width:min(340px,86vw); display:flex; flex-direction:column; gap:12px; }
-    input, button { font:inherit; color:inherit; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:var(--panel); }
-    input:focus { outline:none; border-color:var(--accent); }
-    button { background:var(--accent); border-color:var(--accent); color:#fff; cursor:pointer; }
-    button:disabled { opacity:.5; }
-    #err { color:var(--danger); min-height:1.5em; font-size:14px; }
+    :root { --bg:#efefed; --glow:rgba(255,255,255,.95); --surface:rgba(255,255,255,.62); --text:#212224; --muted:#8a8a8f; --hairline:rgba(20,20,25,.08); --edge:rgba(255,255,255,.75); --shadow:rgba(60,60,70,.14); --ink:#2a2b2e; --ink-text:#f3f3f1; --danger:#b4483f; color-scheme: light; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#121314; --glow:rgba(120,122,130,.16); --surface:rgba(255,255,255,.055); --text:#e6e6e3; --muted:#85868b; --hairline:rgba(255,255,255,.08); --edge:rgba(255,255,255,.09); --shadow:rgba(0,0,0,.45); --ink:#e6e6e3; --ink-text:#17181a; --danger:#e0786f; color-scheme: dark; } }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { margin:0; min-height:100dvh; display:grid; place-items:center; background:var(--bg); color:var(--text); font:16px/1.6 -apple-system,"PingFang SC",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; background:radial-gradient(90% 50% at 50% -8%, var(--glow), transparent 70%); }
+    form { position:relative; width:min(340px,86vw); display:grid; gap:14px; animation: rise .5s cubic-bezier(.16,1,.3,1) both; }
+    @keyframes rise { from { opacity:0; transform:translateY(10px); } }
+    h1 { margin:0 0 6px; text-align:center; font:500 17px "Noto Serif SC","Source Han Serif SC","Songti SC",Georgia,serif; letter-spacing:.14em; }
+    .field { display:grid; gap:8px; }
+    .field span { font-size:12px; letter-spacing:.12em; color:var(--muted); }
+    input { width:100%; padding:13px 16px; border-radius:16px; color:var(--text); font:inherit; outline:0; background:var(--surface); border:1px solid var(--hairline); box-shadow:inset 0 1px 0 var(--edge), 0 10px 30px -14px var(--shadow); -webkit-backdrop-filter:blur(22px); backdrop-filter:blur(22px); }
+    input:focus { border-color: color-mix(in srgb, var(--muted) 60%, transparent); }
+    button { padding:13px; border-radius:999px; border:0; background:var(--ink); color:var(--ink-text); font:inherit; cursor:pointer; box-shadow:0 8px 20px -10px var(--shadow); transition:transform .2s cubic-bezier(.16,1,.3,1), opacity .2s; }
+    button:active { transform:scale(.98); }
+    button:disabled { opacity:.45; }
+    #err { min-height:1.4em; text-align:center; color:var(--danger); font-size:13.5px; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
   </style>
 </head>
 <body>
   <form id="f">
-    <input id="pw" type="password" placeholder="密码" autocomplete="current-password" autofocus required>
-    <div id="err"></div>
+    <h1>Claude</h1>
+    <label class="field"><span>密码</span>
+      <input id="pw" type="password" autocomplete="current-password" autofocus required>
+    </label>
+    <div id="err" role="alert"></div>
     <button id="go">进入</button>
   </form>
   <script>

@@ -25,7 +25,7 @@ const memoryTools: Tool[] = [
       },
     },
     run: (input) => searchMemos(String(input.query ?? "")),
-    label: (input) => `🔎 翻记忆：${input.query}`,
+    label: (input) => `翻记忆：${input.query}`,
   },
   {
     def: {
@@ -43,7 +43,7 @@ const memoryTools: Tool[] = [
       },
     },
     run: (input) => saveMemo(String(input.content ?? "")),
-    label: (input) => `📝 记下了：${input.content}`,
+    label: (input) => `记下了：${input.content}`,
   },
 ];
 
