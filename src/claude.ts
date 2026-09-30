@@ -23,15 +23,13 @@ export function findModel(id: string): ModelOption | undefined {
   return MODELS.find((m) => m.id === id);
 }
 
-export type ChatMessage = { role: "user" | "assistant"; content: string };
-
 const MAX_TOOL_TURNS = 8;
 
 /** 流式调用 Claude，遇到工具调用就执行并继续，直到它给出最终回复。 */
 export async function streamChat(opts: {
   model: ModelOption;
   system: string;
-  messages: ChatMessage[];
+  messages: Anthropic.Beta.BetaMessageParam[];
   signal: AbortSignal;
   onText: (delta: string) => void;
   onTool: (label: string) => void;
@@ -106,6 +104,27 @@ export async function streamChat(opts: {
     messages.push({ role: "user", content: results });
   }
   return { text, stopReason };
+}
+
+const SUMMARY_MODEL = "claude-haiku-4-5";
+
+/** 把旧摘要和新增的对话合并成一份新摘要（用便宜的 Haiku） */
+export async function summarize(previous: string, transcript: string): Promise<string> {
+  const res = await client.messages.create({
+    model: SUMMARY_MODEL,
+    max_tokens: 2000,
+    system:
+      "你负责给一段长期对话维护「滚动摘要」。把旧摘要和新增对话合并成一份更新后的摘要，用中文，不超过 800 字。" +
+      "保留：发生过的事实、约定和承诺、她的近况和情绪、还没聊完的话题、两人之间的称呼和梗。" +
+      "不要评论，不要写成对话，只输出摘要正文。",
+    messages: [
+      {
+        role: "user",
+        content: `旧摘要：\n${previous || "（无）"}\n\n新增对话：\n${transcript}`,
+      },
+    ],
+  });
+  return res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
 }
 
 export function describeError(err: unknown): string {

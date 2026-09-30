@@ -3,9 +3,12 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { secureHeaders } from "hono/secure-headers";
+import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import * as db from "./db.ts";
 import { authEnabled, login, logout, requireLogin } from "./auth.ts";
+import { buildHistory, maybeSummarize } from "./context.ts";
+import { isImageName, readImage, saveImage } from "./uploads.ts";
 import { DEFAULT_SYSTEM, MEMORY_GUIDE } from "./persona.ts";
 import { coreMemoryBlock, tools } from "./tools.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
@@ -16,7 +19,7 @@ app.use("*", secureHeaders());
 // 每次都让浏览器回来问一遍服务器，保证登录检查不被缓存绕过
 app.use("*", async (c, next) => {
   await next();
-  c.header("Cache-Control", "no-cache");
+  if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "no-cache");
 });
 
 // 设了 APP_PASSWORD 就要先登录（放公网必须设）
@@ -41,62 +44,78 @@ app.put("/api/settings", async (c) => {
   return c.json({ ok: true });
 });
 
-app.get("/api/conversations", (c) => c.json(db.listConversations()));
+// ---- 唯一的一条对话 ----
+const thread = () => db.mainConversation(DEFAULT_MODEL);
 
-app.post("/api/conversations", async (c) => {
-  const body = await c.req.json<{ model?: string }>().catch(() => ({ model: undefined }));
-  const model = body.model && findModel(body.model) ? body.model : DEFAULT_MODEL;
-  return c.json(db.createConversation(model));
+app.get("/api/thread", (c) => {
+  const conv = thread();
+  const before = Number(c.req.query("before")) || null;
+  const limit = Math.min(Number(c.req.query("limit")) || 40, 100);
+  return c.json({
+    conversation: { id: conv.id, model: conv.model },
+    ...db.messagePage(conv.id, before, limit),
+  });
 });
 
-app.patch("/api/conversations/:id", async (c) => {
-  const id = c.req.param("id");
-  if (!db.getConversation(id)) return c.json({ error: "not found" }, 404);
-  const body = await c.req.json<{ title?: string; model?: string }>();
-  if (body.model !== undefined && !findModel(body.model))
-    return c.json({ error: "unknown model" }, 400);
-  db.updateConversation(id, { title: body.title?.trim() || undefined, model: body.model });
-  return c.json(db.getConversation(id));
-});
-
-app.delete("/api/conversations/:id", (c) => {
-  db.deleteConversation(c.req.param("id"));
+app.patch("/api/thread", async (c) => {
+  const { model } = await c.req.json<{ model?: string }>();
+  if (!model || !findModel(model)) return c.json({ error: "unknown model" }, 400);
+  db.setModel(thread().id, model);
   return c.json({ ok: true });
 });
 
-app.get("/api/conversations/:id/messages", (c) => {
-  const id = c.req.param("id");
-  const conv = db.getConversation(id);
-  if (!conv) return c.json({ error: "not found" }, 404);
-  return c.json({ conversation: conv, messages: db.listMessages(id) });
+// 界面上清空重来（数据库里旧记录还在，Memos 里的记忆不受影响）
+app.post("/api/thread/reset", (c) => {
+  db.createConversation(thread().model);
+  return c.json({ ok: true });
+});
+
+// ---- 图片 ----
+app.post("/api/upload", bodyLimit({ maxSize: 10 * 1024 * 1024, onError: (c) => c.json({ error: "图片太大" }, 413) }), async (c) => {
+  const name = saveImage(Buffer.from(await c.req.arrayBuffer()));
+  if (!name) return c.json({ error: "只支持 jpg / png / webp / gif" }, 400);
+  return c.json({ id: name });
+});
+
+app.get("/uploads/:name", (c) => {
+  const img = readImage(c.req.param("name"));
+  if (!img) return c.notFound();
+  return c.body(new Uint8Array(img.data), 200, {
+    "Content-Type": img.mediaType,
+    "Cache-Control": "private, max-age=31536000, immutable",
+  });
 });
 
 // 发送一条消息，回复用 SSE 流式返回
-app.post("/api/conversations/:id/chat", async (c) => {
-  const id = c.req.param("id");
-  const conv = db.getConversation(id);
-  if (!conv) return c.json({ error: "not found" }, 404);
-  const { content } = await c.req.json<{ content?: string }>();
-  const userText = String(content ?? "").trim();
-  if (!userText) return c.json({ error: "empty message" }, 400);
+app.post("/api/thread/chat", async (c) => {
+  const conv = thread();
+  const body = await c.req.json<{ content?: string; images?: string[] }>();
+  const userText = String(body.content ?? "").trim();
+  const images = (body.images ?? []).filter((n) => isImageName(n) && readImage(n)).slice(0, 4);
+  if (!userText && !images.length) return c.json({ error: "empty message" }, 400);
   const model = findModel(conv.model) ?? MODELS[0];
 
-  const isFirst = db.listMessages(id).length === 0;
-  db.addMessage(id, "user", userText);
-  if (isFirst) db.updateConversation(id, { title: userText.replace(/\s+/g, " ").slice(0, 30) });
+  db.addMessage(conv.id, "user", userText, images);
 
   return streamSSE(c, async (sse) => {
     const abort = new AbortController();
     sse.onAbort(() => abort.abort());
     let text = "";
     try {
-      const history = db.listMessages(id).map((m) => ({ role: m.role, content: m.content }));
+      // 摘要是后台更新的，这里重新读一次最新的
+      const fresh = db.getConversation(conv.id)!;
+      const system = [
+        persona(),
+        tools.length ? MEMORY_GUIDE : "",
+        await coreMemoryBlock(),
+        fresh.summary ? `此前对话的摘要（更早的内容已不在上下文里）：\n${fresh.summary}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
       const result = await streamChat({
         model,
-        system: [persona(), tools.length ? MEMORY_GUIDE : "", await coreMemoryBlock()]
-          .filter(Boolean)
-          .join("\n\n"),
-        messages: history,
+        system,
+        messages: buildHistory(fresh),
         signal: abort.signal,
         onText: (delta) => void sse.writeSSE({ event: "text", data: JSON.stringify(delta) }),
         onTool: (label) => void sse.writeSSE({ event: "tool", data: JSON.stringify(label) }),
@@ -110,8 +129,9 @@ app.post("/api/conversations/:id/chat", async (c) => {
       console.error(err);
       await sse.writeSSE({ event: "error", data: JSON.stringify(describeError(err)) });
     }
-    if (text) db.addMessage(id, "assistant", text);
-    await sse.writeSSE({ event: "done", data: JSON.stringify(db.getConversation(id)) });
+    if (text) db.addMessage(conv.id, "assistant", text);
+    await sse.writeSSE({ event: "done", data: "{}" });
+    void maybeSummarize(conv.id);
   });
 });
 

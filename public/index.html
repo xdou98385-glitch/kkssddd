@@ -14,36 +14,36 @@
   <title>Chat</title>
 </head>
 <body>
-  <div id="app">
-    <aside id="sidebar">
-      <div class="side-head">
-        <button id="new-chat" class="primary">＋ 新对话</button>
-        <button id="settings-btn" class="icon" title="设置">⚙</button>
-      </div>
-      <ul id="conv-list"></ul>
-    </aside>
-    <div id="scrim"></div>
-    <main>
-      <header>
-        <button id="menu-btn" class="icon" title="对话列表">☰</button>
-        <div id="title">新对话</div>
-        <select id="model"></select>
-      </header>
-      <div id="messages"><div class="empty">想聊点什么？</div></div>
-      <form id="composer">
-        <textarea id="input" rows="1" placeholder="发消息…" enterkeyhint="send"></textarea>
-        <button id="send" class="primary" type="submit">发送</button>
-      </form>
-    </main>
-  </div>
+  <main>
+    <header>
+      <div id="title">Claude</div>
+      <button id="settings-btn" class="icon" title="设置">⚙</button>
+    </header>
+    <div id="messages"><div class="empty">想聊点什么？</div></div>
+    <div id="attachments"></div>
+    <form id="composer">
+      <button id="attach" class="icon" type="button" title="发图片">＋</button>
+      <input id="file" type="file" accept="image/*" multiple hidden>
+      <textarea id="input" rows="1" placeholder="发消息…" enterkeyhint="send"></textarea>
+      <button id="send" class="primary" type="submit">发送</button>
+    </form>
+  </main>
 
   <dialog id="settings">
     <form method="dialog">
-      <h3>系统提示词</h3>
-      <p class="hint">每次对话都会带上，可以写你希望它怎么说话、怎么称呼你。</p>
-      <textarea id="system-prompt" rows="8"></textarea>
-      <div class="dialog-actions">
+      <h3>设置</h3>
+      <label class="field">模型
+        <select id="model"></select>
+      </label>
+      <label class="field">系统提示词
+        <textarea id="system-prompt" rows="9"></textarea>
+      </label>
+      <p class="hint">每次对话都会带上，决定它怎么说话、怎么称呼你。</p>
+      <div class="danger-zone">
+        <button id="reset" type="button">清空聊天重新开始</button>
         <button id="logout" type="button" hidden>退出登录</button>
+      </div>
+      <div class="dialog-actions">
         <button value="cancel">取消</button>
         <button id="save-settings" value="save" class="primary">保存</button>
       </div>

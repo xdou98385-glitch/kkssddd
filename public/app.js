@@ -1,11 +1,12 @@
 const $ = (id) => document.getElementById(id);
 const els = {
-  list: $("conv-list"), messages: $("messages"), title: $("title"), model: $("model"),
-  input: $("input"), form: $("composer"), send: $("send"),
-  settings: $("settings"), systemPrompt: $("system-prompt"),
+  messages: $("messages"), input: $("input"), form: $("composer"), send: $("send"),
+  file: $("file"), attachments: $("attachments"),
+  settings: $("settings"), systemPrompt: $("system-prompt"), model: $("model"),
 };
 
-const state = { conv: null, convs: [], busy: false, abort: null };
+const MAX_IMAGES = 4;
+const state = { busy: false, abort: null, hasMore: false, firstId: null, loadingMore: false, pending: [] };
 
 async function api(path, opts = {}) {
   const res = await fetch("/api" + path, {
@@ -18,20 +19,37 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-function renderMarkdown(text) {
-  return DOMPurify.sanitize(marked.parse(text, { breaks: true }));
-}
+const renderMarkdown = (text) => DOMPurify.sanitize(marked.parse(text, { breaks: true }));
 
-function bubble(role, text) {
+function bubble(role, text, images = []) {
   const wrap = document.createElement("div");
   wrap.className = "msg " + role;
   const b = document.createElement("div");
   b.className = "bubble";
-  if (role === "user" || role === "tool") b.textContent = text;
-  else b.innerHTML = renderMarkdown(text);
+  if (images.length) {
+    const pics = document.createElement("div");
+    pics.className = "pics";
+    for (const name of images) {
+      const img = document.createElement("img");
+      img.src = "/uploads/" + name;
+      img.loading = "lazy";
+      img.onclick = () => openLightbox(img.src);
+      pics.append(img);
+    }
+    b.append(pics);
+  }
+  if (role === "assistant") b.insertAdjacentHTML("beforeend", renderMarkdown(text));
+  else if (text) b.append(document.createTextNode(text));
   wrap.append(b);
-  els.messages.append(wrap);
-  return b;
+  return { wrap, b };
+}
+
+function openLightbox(src) {
+  const box = document.createElement("div");
+  box.id = "lightbox";
+  box.innerHTML = `<img src="${src}">`;
+  box.onclick = () => box.remove();
+  document.body.append(box);
 }
 
 function scrollDown(force) {
@@ -39,69 +57,121 @@ function scrollDown(force) {
   if (force || m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight;
 }
 
-function renderList() {
-  els.list.replaceChildren(
-    ...state.convs.map((c) => {
-      const li = document.createElement("li");
-      if (state.conv && c.id === state.conv.id) li.className = "active";
-      const t = document.createElement("span");
-      t.className = "t"; t.textContent = c.title;
-      const del = document.createElement("button");
-      del.className = "del"; del.textContent = "✕"; del.title = "删除";
-      del.onclick = async (e) => {
-        e.stopPropagation();
-        if (!confirm(`删除「${c.title}」？`)) return;
-        await api("/conversations/" + c.id, { method: "DELETE" });
-        if (state.conv?.id === c.id) { state.conv = null; showEmpty(); }
-        await loadList();
-      };
-      li.append(t, del);
-      li.onclick = () => openConv(c.id);
-      return li;
+// ---- 加载历史 ----
+function renderMessages(msgs, { prepend = false } = {}) {
+  const nodes = msgs.map((m) => bubble(m.role, m.content, m.images).wrap);
+  if (prepend) els.messages.prepend(...nodes);
+  else els.messages.replaceChildren(...nodes);
+  if (msgs.length) state.firstId = msgs[0].id;
+}
+
+async function loadThread() {
+  const data = await api("/thread?limit=40");
+  els.model.value = data.conversation.model;
+  state.hasMore = data.hasMore;
+  if (!data.messages.length) {
+    els.messages.innerHTML = '<div class="empty">想聊点什么？</div>';
+    state.firstId = null;
+    return;
+  }
+  renderMessages(data.messages);
+  scrollDown(true);
+}
+
+async function loadEarlier() {
+  if (state.loadingMore || !state.hasMore || state.firstId == null) return;
+  state.loadingMore = true;
+  try {
+    const data = await api(`/thread?limit=40&before=${state.firstId}`);
+    const m = els.messages;
+    const prevHeight = m.scrollHeight;
+    state.hasMore = data.hasMore;
+    renderMessages(data.messages, { prepend: true });
+    m.scrollTop += m.scrollHeight - prevHeight; // 保持当前位置不跳
+  } finally {
+    state.loadingMore = false;
+  }
+}
+els.messages.addEventListener("scroll", () => {
+  if (els.messages.scrollTop < 80) loadEarlier();
+});
+
+// ---- 图片：压缩到长边 1568px 的 JPEG 再上传，省流量也省 token ----
+async function shrink(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((ok, fail) => {
+      const i = new Image();
+      i.onload = () => ok(i);
+      i.onerror = () => fail(new Error("这张图读不出来"));
+      i.src = url;
+    });
+    const scale = Math.min(1, 1568 / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#fff"; // 透明 PNG 铺白底
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return await new Promise((ok) => canvas.toBlob(ok, "image/jpeg", 0.85));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function addImages(files) {
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) continue;
+    if (state.pending.length >= MAX_IMAGES) { alert(`一条消息最多 ${MAX_IMAGES} 张图`); break; }
+    const item = { id: null, preview: URL.createObjectURL(file) };
+    state.pending.push(item);
+    renderChips();
+    try {
+      const blob = await shrink(file);
+      const res = await fetch("/api/upload", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob });
+      if (res.status === 401) return (location.href = "/login");
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "上传失败");
+      item.id = (await res.json()).id;
+    } catch (err) {
+      alert(err.message);
+      state.pending = state.pending.filter((p) => p !== item);
+    }
+    renderChips();
+  }
+}
+
+function renderChips() {
+  els.attachments.replaceChildren(
+    ...state.pending.map((p) => {
+      const chip = document.createElement("div");
+      chip.className = "chip" + (p.id ? "" : " loading");
+      const img = document.createElement("img");
+      img.src = p.preview;
+      const x = document.createElement("button");
+      x.type = "button"; x.textContent = "✕";
+      x.onclick = () => { state.pending = state.pending.filter((q) => q !== p); renderChips(); };
+      chip.append(img, x);
+      return chip;
     }),
   );
 }
 
-async function loadList() {
-  state.convs = await api("/conversations");
-  renderList();
-}
+$("attach").onclick = () => els.file.click();
+els.file.addEventListener("change", () => { addImages([...els.file.files]); els.file.value = ""; });
+els.input.addEventListener("paste", (e) => {
+  const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+  if (files.length) { e.preventDefault(); addImages(files); }
+});
 
-function showEmpty() {
-  els.messages.innerHTML = '<div class="empty">想聊点什么？</div>';
-  els.title.textContent = "新对话";
-  renderList();
-}
-
-async function openConv(id) {
-  if (state.busy) return;
-  const { conversation, messages } = await api(`/conversations/${id}/messages`);
-  state.conv = conversation;
-  els.title.textContent = conversation.title;
-  els.model.value = conversation.model;
-  els.messages.replaceChildren();
-  messages.forEach((m) => bubble(m.role, m.content));
-  scrollDown(true);
-  renderList();
-  document.body.classList.remove("side-open");
-}
-
-async function newConv() {
-  if (state.busy) return;
-  state.conv = null;
-  showEmpty();
-  document.body.classList.remove("side-open");
-  els.input.focus();
-}
-
-async function send(text) {
-  if (!state.conv) {
-    state.conv = await api("/conversations", { method: "POST", body: { model: els.model.value } });
-  }
-  if (els.messages.querySelector(".empty")) els.messages.replaceChildren();
-  bubble("user", text);
-  const out = bubble("assistant", "");
-  out.classList.add("cursor");
+// ---- 发送 ----
+async function send(text, images) {
+  els.messages.querySelector(".empty")?.remove();
+  const mine = bubble("user", text, images);
+  els.messages.append(mine.wrap);
+  const reply = bubble("assistant", "");
+  reply.b.classList.add("cursor");
+  els.messages.append(reply.wrap);
   scrollDown(true);
 
   setBusy(true);
@@ -109,10 +179,10 @@ async function send(text) {
   let failed = "";
   state.abort = new AbortController();
   try {
-    const res = await fetch(`/api/conversations/${state.conv.id}/chat`, {
+    const res = await fetch("/api/thread/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: text }),
+      body: JSON.stringify({ content: text, images }),
       signal: state.abort.signal,
     });
     if (res.status === 401) { location.href = "/login"; return; }
@@ -120,28 +190,28 @@ async function send(text) {
     await readSSE(res.body, (event, data) => {
       if (event === "text") {
         acc += data;
-        out.innerHTML = renderMarkdown(acc);
+        reply.b.innerHTML = renderMarkdown(acc);
         scrollDown();
       } else if (event === "tool") {
-        const note = bubble("tool", "");
-        note.textContent = data;
-        note.parentElement.remove();
-        out.parentElement.before(note.parentElement);
+        const note = bubble("tool", data);
+        reply.wrap.before(note.wrap);
         scrollDown();
       } else if (event === "error") failed = data;
-      else if (event === "done") { state.conv = data; els.title.textContent = data.title; }
     });
   } catch (err) {
     if (err.name !== "AbortError") failed = err.message;
   } finally {
-    out.classList.remove("cursor");
+    reply.b.classList.remove("cursor");
+    if (!acc) reply.wrap.remove();
     if (failed) {
       const e = bubble("assistant", "");
-      e.classList.add("err");
-      e.textContent = "⚠ " + failed;
+      e.b.classList.add("err");
+      e.b.textContent = "⚠ " + failed;
+      els.messages.append(e.wrap);
     }
     setBusy(false);
-    await loadList();
+    // 刚发的这一轮在数据库里有 id 了，重新对一下最早那条的位置
+    if (state.firstId == null && !failed) loadThread();
   }
 }
 
@@ -180,11 +250,15 @@ function autosize() {
 els.form.addEventListener("submit", (e) => {
   e.preventDefault();
   if (state.busy) return state.abort?.abort();
+  if (state.pending.some((p) => !p.id)) return; // 图片还在上传
   const text = els.input.value.trim();
-  if (!text) return;
+  const images = state.pending.map((p) => p.id);
+  if (!text && !images.length) return;
   els.input.value = "";
+  state.pending = [];
+  renderChips();
   autosize();
-  send(text);
+  send(text, images);
 });
 // 电脑上 Enter 发送、Shift+Enter 换行；手机上 Enter 换行
 els.input.addEventListener("keydown", (e) => {
@@ -196,32 +270,34 @@ els.input.addEventListener("keydown", (e) => {
 });
 els.input.addEventListener("input", autosize);
 
-els.model.addEventListener("change", async () => {
-  if (state.conv) await api("/conversations/" + state.conv.id, { method: "PATCH", body: { model: els.model.value } });
-  localStorage.setItem("model", els.model.value);
-});
-
-$("logout").onclick = async () => {
-  await fetch("/logout", { method: "POST" });
-  location.href = "/login";
-};
-$("new-chat").onclick = newConv;
-$("menu-btn").onclick = () => document.body.classList.add("side-open");
-$("scrim").onclick = () => document.body.classList.remove("side-open");
+// ---- 设置 ----
 $("settings-btn").onclick = async () => {
   els.systemPrompt.value = (await api("/settings")).system_prompt;
   els.settings.showModal();
 };
 els.settings.addEventListener("close", async () => {
-  if (els.settings.returnValue === "save")
+  if (els.settings.returnValue === "save") {
     await api("/settings", { method: "PUT", body: { system_prompt: els.systemPrompt.value } });
+    await api("/thread", { method: "PATCH", body: { model: els.model.value } });
+    localStorage.setItem("model", els.model.value);
+  }
   els.settings.returnValue = "";
 });
+$("reset").onclick = async () => {
+  if (state.busy) return;
+  if (!confirm("清空聊天界面重新开始？\n记忆（Memos）不受影响，聊天记录在数据库里仍然保留。")) return;
+  await api("/thread/reset", { method: "POST" });
+  els.settings.close("cancel");
+  await loadThread();
+};
+$("logout").onclick = async () => {
+  await fetch("/logout", { method: "POST" });
+  location.href = "/login";
+};
 
 (async function init() {
-  const { models, default: def } = await api("/models");
+  const { models } = await api("/models");
   els.model.replaceChildren(...models.map((m) => new Option(m.label, m.id)));
-  els.model.value = localStorage.getItem("model") || def;
-  await loadList();
+  await loadThread();
   if ((await api("/session")).auth) $("logout").hidden = false;
 })();

@@ -2,7 +2,11 @@
 
 自用的 Claude 聊天网页（可装到 iPhone 主屏幕）。后端 Node + Hono，数据存 SQLite，前端纯 HTML/JS，没有构建步骤。
 
-现在有的功能：多对话、流式回复、Markdown 渲染、切换模型（Sonnet / Opus / Haiku）、全局系统提示词、中途停止、手机/电脑自适应。
+现在有的功能：一条一直聊下去的对话（上滑翻历史）、发图片、流式回复、Markdown 渲染、切换模型（Sonnet / Opus / Haiku）、系统提示词、Memos 记忆、中途停止、手机/电脑自适应。
+
+长对话怎么处理：最近的消息原文都带给模型；超过 60 条时，把最早的压成一份滚动摘要（用 Haiku，后台进行），只保留最近 30 条原文。界面上的历史不受影响，数据库里也全都保留。重要的事另外靠 Memos 长期记住。
+
+图片：发送前在浏览器里压缩到长边 1568px 的 JPEG，存在 `data/uploads/`（跟数据库一起备份）。只有最近 10 条消息里的图片会真的发给模型，更早的换成文字占位以省钱。
 
 ## 本地跑起来
 
@@ -33,7 +37,7 @@ node --env-file=.env src/server.ts
    它会给你一个 `https://<机器名>.<tailnet>.ts.net` 的地址，只有你 tailnet 里的设备能打开。
 4. iPhone 开着 Tailscale，用 Safari 打开这个地址 → 分享 → 添加到主屏幕。
 
-更新：`git pull && docker compose up -d --build`。数据在 `./data/chat.db`，备份直接复制这个文件。
+更新：`git pull && docker compose up -d --build`。数据在 `./data/`（`chat.db` 和 `uploads/`），备份直接复制这个目录。
 
 ## 记忆（Memos）
 
@@ -86,5 +90,7 @@ src/persona.ts  默认人设
 src/memos.ts    Memos 读写
 src/tools.ts    给 Claude 用的工具（搜索/保存记忆）
 src/db.ts       SQLite（对话、消息、设置）
+src/context.ts  上下文管理（滚动摘要、图片窗口）
+src/uploads.ts  图片存取
 public/         前端（index.html / login.html / app.js / style.css / PWA 清单）
 ```
