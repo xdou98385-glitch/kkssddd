@@ -257,6 +257,8 @@ async function send(text, images) {
       } else if (event === "tool") {
         reply.wrap.before(toolNote(data));
         scrollDown();
+      } else if (event === "game") {
+        if (game.open) gameLoad();
       } else if (event === "error") failed = data;
     });
   } catch (err) {
@@ -273,8 +275,12 @@ async function send(text, images) {
       scrollDown();
     }
     setBusy(false);
+    if (game.open) gameLoad();
     // 这是第一条消息：重新加载一次，拿到数据库里的 id 才能往前翻页
-    if (state.firstId == null && !failed) loadThread();
+    if (state.firstId == null && !failed) {
+      const d = await api("/thread?limit=40").catch(() => null);
+      if (d) { state.hasMore = d.hasMore; state.firstId = d.messages[0]?.id ?? null; }
+    }
   }
 }
 
@@ -371,6 +377,115 @@ $("logout").onclick = async () => {
   await fetch("/logout", { method: "POST" });
   location.href = "/login";
 };
+
+// ---- 数独 ----
+const game = { open: false, state: null, sel: -1, cells: [] };
+const boardEl = $("board");
+
+function buildBoard() {
+  for (let i = 0; i < 81; i++) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("role", "gridcell");
+    b.dataset.i = i;
+    const r = Math.floor(i / 9), c = i % 9;
+    b.className = "cell" + (r === 0 ? " r0" : r % 3 === 0 ? " bt" : "") + (c === 0 ? " c0" : c % 3 === 0 ? " bl" : "");
+    b.onclick = () => { game.sel = i; renderGame(); };
+    boardEl.append(b);
+    game.cells.push(b);
+  }
+  const pad = $("pad");
+  for (let n = 1; n <= 9; n++) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = n;
+    b.onclick = () => gameMove(n);
+    pad.append(b);
+  }
+  const erase = document.createElement("button");
+  erase.type = "button"; erase.setAttribute("aria-label", "擦除");
+  erase.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  erase.onclick = () => gameMove(0);
+  pad.append(erase);
+}
+
+async function gameLoad() {
+  try { game.state = await api("/game/sudoku"); } catch { return; }
+  renderGame();
+}
+
+function renderGame() {
+  const s = game.state;
+  if (!s) return;
+  if (!game.cells.length) buildBoard();
+  const bad = new Set(s.conflicts);
+  const sel = game.sel;
+  const selVal = sel >= 0 ? s.cells[sel] : "0";
+  const sr = Math.floor(sel / 9), sc = sel % 9;
+  game.cells.forEach((b, i) => {
+    const v = s.cells[i];
+    const who = s.by[i];
+    const r = Math.floor(i / 9), c = i % 9;
+    const peer = sel >= 0 && i !== sel && (r === sr || c === sc || (Math.floor(r / 3) === Math.floor(sr / 3) && Math.floor(c / 3) === Math.floor(sc / 3)));
+    b.textContent = v === "0" ? "" : v;
+    b.classList.toggle("g", who === "g");
+    b.classList.toggle("p", who === "p");
+    b.classList.toggle("c", who === "c");
+    b.classList.toggle("bad", bad.has(i));
+    b.classList.toggle("sel", i === sel);
+    b.classList.toggle("peer", peer);
+    b.classList.toggle("same", i !== sel && selVal !== "0" && v === selVal);
+    b.setAttribute("aria-label", `第${r + 1}行第${c + 1}列${v === "0" ? "空" : v}`);
+  });
+  $("game-meta").textContent = s.solvedAt ? `${s.label} · 已完成` : `${s.label} · 还剩 ${s.empty} 格`;
+}
+
+async function gameMove(value) {
+  const s = game.state;
+  if (!s || game.sel < 0 || s.puzzle[game.sel] !== "0" || s.solvedAt) return;
+  const v = String(value) === s.cells[game.sel] ? 0 : value; // 再点一次同一个数字 = 擦掉
+  try {
+    game.state = await api("/game/sudoku/move", { method: "POST", body: { index: game.sel, value: v } });
+  } catch { return; }
+  renderGame();
+  if (game.state.solvedAt && !s.solvedAt && !state.busy) send("我做完了。", []);
+}
+
+function askClaude(text) {
+  if (!state.busy) send(text, []);
+}
+
+$("game-btn").onclick = () => {
+  game.open = !game.open;
+  $("game").hidden = !game.open;
+  $("game-btn").setAttribute("aria-pressed", String(game.open));
+  if (game.open) gameLoad();
+  else scrollDown(true);
+};
+$("g-hint").onclick = () => askClaude("给我个提示，先别直接说答案。");
+$("g-step").onclick = () => askClaude("你来走下一步，走完告诉我为什么这么下。");
+$("g-new").onclick = () => $("new-game").showModal();
+$("new-game").addEventListener("close", async (e) => {
+  const level = e.target.returnValue;
+  e.target.returnValue = "";
+  if (!["easy", "medium", "hard"].includes(level)) return;
+  const s = game.state;
+  if (s && !s.solvedAt && s.moves > 0 && !confirm("放弃现在这盘，开新的？")) return;
+  game.state = await api("/game/sudoku/new", { method: "POST", body: { difficulty: level } });
+  game.sel = -1;
+  renderGame();
+});
+// 电脑键盘：数字填入，退格擦除，方向键移动
+document.addEventListener("keydown", (e) => {
+  if (!game.open || e.target.matches("textarea, input, select") || e.metaKey || e.ctrlKey) return;
+  if (/^[1-9]$/.test(e.key)) gameMove(Number(e.key));
+  else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") gameMove(0);
+  else if (e.key.startsWith("Arrow") && game.sel >= 0) {
+    const d = { ArrowUp: -9, ArrowDown: 9, ArrowLeft: -1, ArrowRight: 1 }[e.key];
+    const next = game.sel + d;
+    const sameRow = Math.floor(next / 9) === Math.floor(game.sel / 9);
+    if (next >= 0 && next < 81 && (Math.abs(d) === 9 || sameRow)) { game.sel = next; renderGame(); e.preventDefault(); }
+  }
+});
 
 (async function init() {
   const { models } = await api("/models");

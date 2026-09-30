@@ -160,6 +160,31 @@ dialog button.primary { background: var(--ink); color: var(--ink-text); border-c
 #reset { color: var(--danger); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+/* ---- 数独面板 ---- */
+#game { display: grid; justify-items: center; gap: 10px; padding: 2px 20px 12px; }
+#game[hidden] { display: none; }
+.game-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: min(100%, 360px, 40dvh); min-width: 290px; font: 12.5px/1 var(--sans); letter-spacing: 0.06em; color: var(--muted); }
+.game-actions { display: flex; gap: 6px; }
+.game-top button { padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); color: var(--text); font: 12.5px/1 var(--sans); }
+#board { display: grid; grid-template-columns: repeat(9, 1fr); width: min(100%, 360px, 40dvh); min-width: 290px; aspect-ratio: 1; overflow: hidden; border-radius: 16px; background: var(--surface); border: 1px solid var(--hairline); box-shadow: inset 0 1px 0 var(--edge), 0 10px 30px -14px var(--shadow); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
+.cell { display: grid; place-items: center; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text); font: 500 clamp(15px, 4.6vw, 20px)/1 var(--sans); border-top: 1px solid var(--hairline); border-left: 1px solid var(--hairline); transition: background 0.15s; }
+.cell:active { transform: none; }
+.cell.r0 { border-top: 0; } .cell.c0 { border-left: 0; }
+.cell.bt { border-top: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent); }
+.cell.bl { border-left: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent); }
+.cell.g { font-family: var(--serif); font-weight: 700; }
+.cell.c { font-family: var(--serif); font-style: italic; color: var(--muted); }
+.cell.peer { background: color-mix(in srgb, var(--muted) 10%, transparent); }
+.cell.same { background: color-mix(in srgb, var(--muted) 22%, transparent); }
+.cell.sel { background: color-mix(in srgb, var(--muted) 34%, transparent); }
+.cell.bad { color: var(--danger); }
+#pad { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; width: min(100%, 360px, 40dvh); min-width: 290px; }
+#pad button { display: grid; place-items: center; height: 36px; padding: 0; border-radius: 12px; background: var(--surface); border: 1px solid var(--hairline); color: var(--text); font: 500 16px/1 var(--sans); }
+#pad button svg { width: 16px; height: 16px; }
+#game-btn[aria-pressed="true"] { background: var(--ink); color: var(--ink-text); }
+.level-pick { display: flex; gap: 8px; margin-bottom: 14px; }
+.level-pick button { flex: 1; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

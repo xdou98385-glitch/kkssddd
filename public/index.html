@@ -17,7 +17,9 @@
 <body>
   <main>
     <header>
-      <span class="spacer"></span>
+      <button id="game-btn" class="round" type="button" aria-label="数独" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16"/></svg>
+      </button>
       <h1 id="title">Claude</h1>
       <button id="settings-btn" class="round" type="button" aria-label="设置">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
@@ -27,6 +29,19 @@
     <div id="messages" aria-live="polite">
       <div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
     </div>
+
+    <section id="game" hidden aria-label="数独">
+      <div class="game-top">
+        <span id="game-meta"></span>
+        <span class="game-actions">
+          <button id="g-hint" type="button">要提示</button>
+          <button id="g-step" type="button">你来下一步</button>
+          <button id="g-new" type="button">新局</button>
+        </span>
+      </div>
+      <div id="board" role="grid"></div>
+      <div id="pad"></div>
+    </section>
 
     <div id="attachments"></div>
     <form id="composer">
@@ -61,6 +76,18 @@
         <button value="cancel">取消</button>
         <button id="save-settings" value="save" class="primary">保存</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="new-game">
+    <form method="dialog">
+      <h2>新开一盘</h2>
+      <div class="level-pick">
+        <button value="easy" type="submit">简单</button>
+        <button value="medium" type="submit">中等</button>
+        <button value="hard" type="submit">困难</button>
+      </div>
+      <div class="dialog-actions"><button value="cancel">取消</button></div>
     </form>
   </dialog>
 

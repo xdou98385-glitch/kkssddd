@@ -32,7 +32,7 @@ export async function streamChat(opts: {
   messages: Anthropic.Beta.BetaMessageParam[];
   signal: AbortSignal;
   onText: (delta: string) => void;
-  onTool: (label: string) => void;
+  onTool: (label: string, name: string) => void;
 }): Promise<{ text: string; stopReason: string | null }> {
   const { model } = opts;
   const messages: Anthropic.Beta.BetaMessageParam[] = [...opts.messages];
@@ -89,7 +89,7 @@ export async function streamChat(opts: {
       const tool = findTool(block.name);
       try {
         if (!tool) throw new Error(`未知工具 ${block.name}`);
-        opts.onTool(tool.label(block.input));
+        opts.onTool(tool.label(block.input), block.name);
         results.push({ type: "tool_result", tool_use_id: block.id, content: await tool.run(block.input) });
       } catch (err) {
         console.error(`tool ${block.name}:`, err);

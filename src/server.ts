@@ -9,9 +9,10 @@ import * as db from "./db.ts";
 import { authEnabled, login, logout, requireLogin } from "./auth.ts";
 import { buildHistory, maybeSummarize } from "./context.ts";
 import { isImageName, readImage, saveImage } from "./uploads.ts";
-import { DEFAULT_SYSTEM, MEMORY_GUIDE } from "./persona.ts";
-import { coreMemoryBlock, tools } from "./tools.ts";
-import { memosStatus } from "./memos.ts";
+import { DEFAULT_SYSTEM, GAME_GUIDE, MEMORY_GUIDE } from "./persona.ts";
+import { coreMemoryBlock } from "./tools.ts";
+import { memosEnabled, memosStatus } from "./memos.ts";
+import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
@@ -34,6 +35,27 @@ app.get("/api/session", (c) => c.json({ auth: authEnabled }));
 // 前端依赖直接从 node_modules 提供，省掉构建步骤
 app.get("/vendor/marked.js", serveStatic({ path: "node_modules/marked/lib/marked.umd.js" }));
 app.get("/vendor/purify.js", serveStatic({ path: "node_modules/dompurify/dist/purify.min.js" }));
+
+// ---- 数独 ----
+app.get("/api/game/sudoku", (c) => c.json(publicState(currentOrNew())));
+
+app.post("/api/game/sudoku/new", async (c) => {
+  const { difficulty } = await c.req.json<{ difficulty?: string }>().catch(() => ({ difficulty: undefined }));
+  if (difficulty !== "easy" && difficulty !== "medium" && difficulty !== "hard")
+    return c.json({ error: "difficulty must be easy / medium / hard" }, 400);
+  const g = generate(difficulty as Difficulty);
+  saveGame(g);
+  return c.json(publicState(g));
+});
+
+app.post("/api/game/sudoku/move", async (c) => {
+  const { index, value } = await c.req.json<{ index?: number; value?: number }>();
+  const g = currentOrNew();
+  const err = place(g, Number(index), Number(value), "p");
+  if (err) return c.json({ error: err }, 400);
+  saveGame(g);
+  return c.json(publicState(g));
+});
 
 app.get("/api/memory/status", async (c) => c.json(await memosStatus()));
 
@@ -110,7 +132,8 @@ app.post("/api/thread/chat", async (c) => {
       const fresh = db.getConversation(conv.id)!;
       const system = [
         persona(),
-        tools.length ? MEMORY_GUIDE : "",
+        GAME_GUIDE,
+        memosEnabled ? MEMORY_GUIDE : "",
         await coreMemoryBlock(),
         fresh.summary ? `此前对话的摘要（更早的内容已不在上下文里）：\n${fresh.summary}` : "",
       ]
@@ -122,7 +145,11 @@ app.post("/api/thread/chat", async (c) => {
         messages: buildHistory(fresh),
         signal: abort.signal,
         onText: (delta) => void sse.writeSSE({ event: "text", data: JSON.stringify(delta) }),
-        onTool: (label) => void sse.writeSSE({ event: "tool", data: JSON.stringify(label) }),
+        onTool: (label, name) => {
+          void sse.writeSSE({ event: "tool", data: JSON.stringify(label) });
+          // 游戏状态可能被 Claude 改了，通知前端刷新棋盘
+          if (name.startsWith("sudoku_")) void sse.writeSSE({ event: "game", data: "{}" });
+        },
       });
       text = result.text;
       if (result.stopReason === "refusal")
