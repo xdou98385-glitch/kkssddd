@@ -32,6 +32,18 @@ function ensureColumn(table: string, column: string, ddl: string): void {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
   if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
 }
+db.exec(`
+  CREATE TABLE IF NOT EXISTS push_subs (endpoint TEXT PRIMARY KEY, sub TEXT NOT NULL, created_at INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    app TEXT,
+    detail TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
+`);
+ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的
 ensureColumn("messages", "images", "TEXT"); // JSON 数组：上传图片的文件名
 ensureColumn("conversations", "summary", "TEXT NOT NULL DEFAULT ''"); // 更早对话的摘要
 ensureColumn("conversations", "summarized_upto", "INTEGER NOT NULL DEFAULT 0"); // 摘要覆盖到的最后一条消息 id
@@ -137,11 +149,65 @@ export function addMessage(
   role: Message["role"],
   content: string,
   images: string[] = [],
+  kind: "proactive" | null = null,
 ): void {
   db.prepare(
-    "INSERT INTO messages (conversation_id, role, content, images, created_at) VALUES (?, ?, ?, ?, ?)",
-  ).run(conversationId, role, content, images.length ? JSON.stringify(images) : null, now());
+    "INSERT INTO messages (conversation_id, role, content, images, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(conversationId, role, content, images.length ? JSON.stringify(images) : null, kind, now());
   db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now(), conversationId);
+}
+
+/** 最后一条消息（含是否是主动发的），用来判断要不要再主动开口 */
+export function lastMessage(
+  conversationId: string,
+): { role: "user" | "assistant"; kind: string | null; created_at: number } | undefined {
+  return db
+    .prepare("SELECT role, kind, created_at FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1")
+    .get(conversationId) as { role: "user" | "assistant"; kind: string | null; created_at: number } | undefined;
+}
+
+export function proactiveStats(conversationId: string, since: number): { count: number; lastAt: number } {
+  const r = db
+    .prepare(
+      `SELECT COUNT(*) AS n, COALESCE(MAX(created_at), 0) AS last FROM messages
+       WHERE conversation_id = ? AND kind = 'proactive' AND created_at >= ?`,
+    )
+    .get(conversationId, since) as { n: number; last: number };
+  return { count: r.n, lastAt: r.last };
+}
+
+// ---- 推送订阅 ----
+export function savePushSub(sub: { endpoint: string }): void {
+  db.prepare(
+    "INSERT INTO push_subs (endpoint, sub, created_at) VALUES (?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET sub = excluded.sub",
+  ).run(sub.endpoint, JSON.stringify(sub), now());
+}
+export function listPushSubs(): any[] {
+  return (db.prepare("SELECT sub FROM push_subs").all() as unknown as { sub: string }[]).map((r) => JSON.parse(r.sub));
+}
+export function removePushSub(endpoint: string): void {
+  db.prepare("DELETE FROM push_subs WHERE endpoint = ?").run(endpoint);
+}
+
+// ---- 设备事件（iPhone 快捷指令等上报） ----
+export interface DeviceEvent {
+  id: number;
+  at: number;
+  kind: string;
+  app: string | null;
+  detail: string | null;
+}
+export function addEvent(kind: string, app: string | null, detail: string | null, at = now()): void {
+  db.prepare("INSERT INTO events (at, kind, app, detail) VALUES (?, ?, ?, ?)").run(at, kind, app, detail);
+  db.prepare("DELETE FROM events WHERE at < ?").run(now() - 30 * 86400_000); // 只留 30 天
+}
+export function eventsSince(since: number, limit = 200): DeviceEvent[] {
+  return (
+    db.prepare("SELECT id, at, kind, app, detail FROM events WHERE at >= ? ORDER BY at DESC LIMIT ?").all(since, limit) as unknown as DeviceEvent[]
+  ).reverse();
+}
+export function latestEvent(): DeviceEvent | undefined {
+  return db.prepare("SELECT id, at, kind, app, detail FROM events ORDER BY at DESC LIMIT 1").get() as DeviceEvent | undefined;
 }
 
 export function getSetting(key: string, fallback = ""): string {

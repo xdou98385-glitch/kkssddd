@@ -67,6 +67,30 @@ curl -s -H "Authorization: Bearer 你的token" "http://127.0.0.1:5230/api/v1/mem
 - ⚙ 设置里有一行连接状态，启动日志里也有 `weread:` 一行。
 - token 只放服务器的 `.env`，不要提交到 git。
 
+## 主动消息与通知
+
+网页推送（Web Push）：服务器在你没打开网页时也能给手机弹通知。**iPhone 必须先「添加到主屏幕」，再从主屏幕上的图标打开**，在 ⚙ 设置里点「开启本机通知」。
+
+- 默认关闭。在设置里勾选「允许它主动找我」，设安静时段和每天最多几条。
+- 每隔一段时间（`PROACTIVE_EVERY_MIN`，默认 90 分钟）它会「想一次」：有话想说就写进聊天并推送，没话就不发。
+- 不会打扰你的限制：安静时段不发；上一条主动消息你还没回就不再发；刚聊过 45 分钟内不发；两条主动消息至少隔 3 小时；每天有上限。
+- 「现在试一条」会跳过所有限制，让它马上写一条，用来测试。
+- VAPID 密钥第一次用时自动生成并存在数据库里，不用配置。
+
+## 设备活动（快捷指令）
+
+网页看不到你手机上别的 app，所以用 iPhone 的「快捷指令」自动化往服务器汇报事件，Claude 通过 `device_activity` 工具查看。iOS 拿不到完整的屏幕使用时间，只能记录你选定的这几类事件。
+
+1. 在 `.env` 里设 `DEVICE_TOKEN`（`openssl rand -base64 24` 生成），重启。
+2. 快捷指令 → 自动化 → 新建个人自动化，触发条件选一个（打开某个 app / 专注模式 / 开始充电 / 闹钟停止 …），动作选「获取 URL 内容」：
+   - URL：`https://你的地址/api/events`
+   - 方法：`POST`
+   - 请求头：`Authorization` = `Bearer 你的DEVICE_TOKEN`；`Content-Type` = `application/json`
+   - 请求体选 JSON，加文本字段 `kind`（见下表），按需加 `app`、`detail`
+   - 把自动化的「运行前询问」关掉
+3. 事件类型：`app_open`（app 填 app 名，每个 app 单独做一条自动化）、`app_close`、`focus_on`/`focus_off`、`charging_on`/`charging_off`（detail 可填电量）、`wake`（起床）、`arrive`/`leave`（app 或 detail 填地点）。别的 `kind` 也能传，Claude 会照字面看。
+4. ⚙ 设置里会显示最近一条事件是多久以前，用来确认通了。
+
 ## 放到公网（Tailscale Funnel）
 
 不想每次开 Tailscale 的话，用 Funnel 把同一个地址开放到公网：
@@ -101,6 +125,10 @@ src/persona.ts  默认人设
 src/memos.ts    Memos 读写
 src/sudoku.ts   数独出题、校验、提示
 src/weread.ts   微信读书网关调用
+src/push.ts     网页推送（VAPID、发送、清理失效订阅）
+src/proactive.ts 主动消息（心跳、限制、定时）
+src/device.ts   设备事件记录与摘要
+public/sw.js    Service Worker（收推送、点通知回到应用）
 src/tools.ts    给 Claude 用的工具（搜索/保存记忆）
 src/db.ts       SQLite（对话、消息、设置）
 src/context.ts  上下文管理（滚动摘要、图片窗口）

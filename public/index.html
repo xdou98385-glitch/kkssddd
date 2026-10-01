@@ -67,8 +67,26 @@
         <textarea id="system-prompt" rows="9"></textarea>
         <small>每次对话都会带上，决定它怎么说话、怎么称呼你。</small>
       </label>
+      <fieldset class="group">
+        <legend>主动消息</legend>
+        <label class="switch"><input type="checkbox" id="pro-on"><span>允许它主动找我（发消息并推送到手机）</span></label>
+        <div class="row3">
+          <label class="field"><span>安静时段从</span><input type="time" id="pro-qs" value="23:00"></label>
+          <label class="field"><span>到</span><input type="time" id="pro-qe" value="09:00"></label>
+          <label class="field"><span>每天最多</span>
+            <select id="pro-max"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option></select>
+          </label>
+        </div>
+        <div class="push-actions">
+          <button id="push-enable" type="button">开启本机通知</button>
+          <button id="push-test" type="button">测试通知</button>
+          <button id="pro-run" type="button">现在试一条</button>
+        </div>
+        <p id="push-status" class="memory-status"></p>
+      </fieldset>
       <p id="memory-status" class="memory-status"></p>
       <p id="weread-status" class="memory-status"></p>
+      <p id="device-status" class="memory-status"></p>
       <div class="danger-zone">
         <button id="reset" type="button">清空聊天重新开始</button>
         <button id="logout" type="button" hidden>退出登录</button>

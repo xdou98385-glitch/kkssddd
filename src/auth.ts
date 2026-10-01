@@ -72,7 +72,7 @@ function recordFail(ip: string): void {
 }
 
 // 不需要登录就能访问的路径（登录页本身 + 图标/清单，iOS 添加到主屏幕时会不带 cookie 去取）
-const PUBLIC = new Set(["/login", "/login.html", "/manifest.webmanifest", "/hero.png", "/icon-180.png", "/icon-192.png", "/icon-512.png"]);
+const PUBLIC = new Set(["/login", "/login.html", "/manifest.webmanifest", "/hero.png", "/sw.js", "/api/events", "/icon-180.png", "/icon-192.png", "/icon-512.png"]);
 
 export const requireLogin: MiddlewareHandler = async (c, next) => {
   if (!authEnabled || PUBLIC.has(c.req.path) || validToken(getCookie(c, COOKIE))) return next();

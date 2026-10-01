@@ -33,10 +33,11 @@ export async function streamChat(opts: {
   signal: AbortSignal;
   onText: (delta: string) => void;
   onTool: (label: string, name: string) => void;
-}): Promise<{ text: string; stopReason: string | null }> {
+}): Promise<{ text: string; finalText: string; stopReason: string | null }> {
   const { model } = opts;
   const messages: Anthropic.Beta.BetaMessageParam[] = [...opts.messages];
-  let text = "";
+  let text = ""; // 整条回复，含调用工具前说的话
+  let finalText = ""; // 只有最后一轮（真正的回复）
   let stopReason: string | null = null;
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
@@ -60,6 +61,7 @@ export async function streamChat(opts: {
 
     // 同一条回复里前后两轮文字之间补个空行
     let separate = text !== "";
+    finalText = "";
     stream.on("text", (delta) => {
       if (separate) {
         separate = false;
@@ -67,6 +69,7 @@ export async function streamChat(opts: {
         opts.onText("\n\n");
       }
       text += delta;
+      finalText += delta;
       opts.onText(delta);
     });
 
@@ -75,7 +78,7 @@ export async function streamChat(opts: {
       final = await stream.finalMessage();
     } catch (err) {
       // 用户中途停止：保留已生成的部分
-      if (opts.signal.aborted) return { text, stopReason: "aborted" };
+      if (opts.signal.aborted) return { text, finalText, stopReason: "aborted" };
       throw err;
     }
     stopReason = final.stop_reason;
@@ -103,7 +106,7 @@ export async function streamChat(opts: {
     }
     messages.push({ role: "user", content: results });
   }
-  return { text, stopReason };
+  return { text, finalText, stopReason };
 }
 
 const SUMMARY_MODEL = "claude-haiku-4-5";

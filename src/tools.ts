@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
+import { activitySummary, deviceEnabled, userTz } from "./device.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
 
 export interface Tool {
@@ -149,10 +150,29 @@ const wereadTool: Tool = {
   },
 };
 
+// ---- 设备活动：快捷指令上报的事件 ----
+const deviceTool: Tool = {
+  def: {
+    name: "device_activity",
+    description:
+      "查看小月手机最近的活动（她用快捷指令上报的：打开了哪些 app、专注模式、充电、起床等）。minutes 是往回看多久。只有事件没有时长，没记录不代表没用手机。",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: { minutes: { type: "integer", enum: [30, 60, 180, 720, 1440] } },
+      required: ["minutes"],
+      additionalProperties: false,
+    },
+  },
+  run: async (input) => activitySummary(Number(input.minutes) || 180, userTz()),
+  label: () => "看了眼她手机最近在干嘛",
+};
+
 export const tools: Tool[] = [
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),
   ...(wereadEnabled ? [wereadTool] : []),
+  ...(deviceEnabled ? [deviceTool] : []),
 ];
 export const findTool = (name: string) => tools.find((t) => t.def.name === name);
 

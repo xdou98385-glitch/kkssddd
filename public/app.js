@@ -6,7 +6,7 @@ const els = {
 };
 
 const MAX_IMAGES = 4;
-const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true };
+const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null };
 
 async function api(path, opts = {}) {
   const res = await fetch("/api" + path, {
@@ -122,6 +122,7 @@ async function loadThread() {
   const { nodes, lastDay } = renderBatch(data.messages);
   els.messages.replaceChildren(...nodes);
   state.firstId = data.messages[0].id;
+  state.lastId = data.messages.at(-1).id;
   state.lastDay = lastDay;
   scrollDown(true);
 }
@@ -277,10 +278,7 @@ async function send(text, images) {
     setBusy(false);
     if (game.open) gameLoad();
     // 这是第一条消息：重新加载一次，拿到数据库里的 id 才能往前翻页
-    if (state.firstId == null && !failed) {
-      const d = await api("/thread?limit=40").catch(() => null);
-      if (d) { state.hasMore = d.hasMore; state.firstId = d.messages[0]?.id ?? null; }
-    }
+    if (!failed) await syncIds();
   }
 }
 
@@ -343,6 +341,7 @@ els.input.addEventListener("input", autosize);
 $("settings-btn").onclick = async () => {
   els.systemPrompt.value = (await api("/settings")).system_prompt;
   showMemoryStatus("检查记忆连接…", false);
+  loadProactiveUI();
   els.settings.showModal();
   try {
     const s = await api("/memory/status");
@@ -371,9 +370,134 @@ els.settings.addEventListener("close", async () => {
     await api("/settings", { method: "PUT", body: { system_prompt: els.systemPrompt.value } });
     await api("/thread", { method: "PATCH", body: { model: els.model.value } });
     localStorage.setItem("model", els.model.value);
+    try {
+      await api("/proactive", {
+        method: "PUT",
+        body: { enabled: $("pro-on").checked, quietStart: $("pro-qs").value, quietEnd: $("pro-qe").value, maxPerDay: Number($("pro-max").value), tz: timeZone() },
+      });
+    } catch (err) {
+      alert("主动消息设置没保存上：" + err.message);
+    }
   }
   els.settings.returnValue = "";
 });
+
+// ---- 通知与主动消息 ----
+const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+function setStatus(id, text, bad = false) {
+  const el = $(id);
+  el.textContent = text;
+  el.classList.toggle("bad", bad);
+}
+
+function keyToBytes(b64) {
+  const raw = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+}
+
+async function pushState() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return "unsupported";
+  if (Notification.permission === "denied") return "denied";
+  const reg = await navigator.serviceWorker.getRegistration("/sw.js");
+  return reg && (await reg.pushManager.getSubscription()) ? "on" : "off";
+}
+
+async function refreshPushStatus() {
+  const s = await pushState();
+  const text = {
+    unsupported: "通知：这里还不能收推送。iPhone 需要先「添加到主屏幕」，再从主屏幕上的图标打开。",
+    denied: "通知：权限被拒绝了，去 系统设置 → 通知 里打开。",
+    on: "通知：本机已开启",
+    off: "通知：本机还没开启",
+  }[s];
+  setStatus("push-status", text, s === "unsupported" || s === "denied");
+}
+
+async function enablePush() {
+  if ((await pushState()) === "unsupported") return refreshPushStatus();
+  try {
+    if ((await Notification.requestPermission()) !== "granted") return refreshPushStatus();
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    const { key } = await api("/push/key");
+    const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(key) }));
+    await api("/push/subscribe", { method: "POST", body: { subscription: sub.toJSON(), tz: timeZone() } });
+    setStatus("push-status", "通知：本机已开启");
+  } catch (err) {
+    setStatus("push-status", "开启通知失败：" + err.message, true);
+  }
+}
+
+async function loadProactiveUI() {
+  try {
+    const p = await api("/proactive");
+    $("pro-on").checked = p.enabled;
+    $("pro-qs").value = p.quietStart;
+    $("pro-qe").value = p.quietEnd;
+    $("pro-max").value = String(p.maxPerDay);
+  } catch { /* 读不到就保持默认 */ }
+  refreshPushStatus();
+  try {
+    const d = await api("/device/status");
+    if (!d.enabled) setStatus("device-status", "设备：未配置（服务器没读到 DEVICE_TOKEN）", true);
+    else if (!d.last) setStatus("device-status", "设备：已配置，还没收到事件");
+    else {
+      const min = Math.round((Date.now() - d.last.at) / 60000);
+      const ago = min < 90 ? `${min} 分钟前` : `${Math.round(min / 60)} 小时前`;
+      setStatus("device-status", `设备：最近一条是 ${ago}（${d.last.kind}${d.last.app ? " " + d.last.app : ""}）`);
+    }
+  } catch { setStatus("device-status", ""); }
+}
+
+$("push-enable").onclick = enablePush;
+$("push-test").onclick = async () => {
+  try {
+    const r = await api("/push/test", { method: "POST" });
+    setStatus("push-status", r.sent ? `测试通知已发出（${r.sent} 台设备）` : "没有已开启通知的设备，先点「开启本机通知」", !r.sent);
+  } catch (err) { setStatus("push-status", "发送失败：" + err.message, true); }
+};
+$("pro-run").onclick = async () => {
+  const btn = $("pro-run");
+  btn.disabled = true;
+  setStatus("push-status", "让它想想要说什么…");
+  try {
+    const r = await api("/proactive/run", { method: "POST" });
+    if (r.status === "sent") {
+      setStatus("push-status", r.pushed ? "已发出，手机上应该很快弹通知。" : "已写进聊天，但还没有设备开启通知，所以没推送。");
+      await refreshThread(true);
+    } else setStatus("push-status", "这次没发：" + r.reason, true);
+  } catch (err) { setStatus("push-status", "失败：" + err.message, true); }
+  btn.disabled = false;
+};
+
+// 回到页面时，如果有新消息（比如它主动发的）就刷新
+async function syncIds() {
+  const d = await api("/thread?limit=40").catch(() => null);
+  if (!d) return;
+  state.lastId = d.messages.at(-1)?.id ?? null;
+  if (state.firstId == null) { state.hasMore = d.hasMore; state.firstId = d.messages[0]?.id ?? null; }
+}
+async function refreshThread(force = false) {
+  if (state.busy) return;
+  const d = await api("/thread?limit=40").catch(() => null);
+  if (!d || !d.messages.length) return;
+  if (!force && d.messages.at(-1).id === state.lastId) return;
+  const { nodes, lastDay } = renderBatch(d.messages);
+  els.messages.replaceChildren(...nodes);
+  state.firstId = d.messages[0].id;
+  state.lastId = d.messages.at(-1).id;
+  state.hasMore = d.hasMore;
+  state.lastDay = lastDay;
+  scrollDown(true);
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshThread();
+});
+// 已经授权过的话，启动时更新一下 Service Worker
+if ("serviceWorker" in navigator && "Notification" in window && Notification.permission === "granted") {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
 $("reset").onclick = async () => {
   if (state.busy) return;
   if (!confirm("清空聊天界面重新开始？\n记忆（Memos）不受影响，聊天记录在数据库里仍然保留。")) return;

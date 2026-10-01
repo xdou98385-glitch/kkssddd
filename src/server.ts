@@ -7,12 +7,14 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import * as db from "./db.ts";
 import { authEnabled, login, logout, requireLogin } from "./auth.ts";
-import { buildHistory, maybeSummarize } from "./context.ts";
+import { buildHistory, buildSystem, maybeSummarize } from "./context.ts";
 import { isImageName, readImage, saveImage } from "./uploads.ts";
-import { DEFAULT_SYSTEM, GAME_GUIDE, MEMORY_GUIDE, WEREAD_GUIDE } from "./persona.ts";
-import { wereadEnabled, wereadStatus } from "./weread.ts";
-import { coreMemoryBlock } from "./tools.ts";
-import { memosEnabled, memosStatus } from "./memos.ts";
+import { DEFAULT_SYSTEM } from "./persona.ts";
+import { wereadStatus } from "./weread.ts";
+import { memosStatus } from "./memos.ts";
+import { publicKey, sendPush } from "./push.ts";
+import { checkDeviceToken, deviceEnabled, recordEvent } from "./device.ts";
+import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
@@ -56,6 +58,47 @@ app.post("/api/game/sudoku/move", async (c) => {
   if (err) return c.json({ error: err }, 400);
   saveGame(g);
   return c.json(publicState(g));
+});
+
+// ---- 通知与主动消息 ----
+app.get("/api/push/key", (c) => c.json({ key: publicKey() }));
+
+app.post("/api/push/subscribe", async (c) => {
+  const { subscription, tz } = await c.req.json<{ subscription?: { endpoint?: string; keys?: unknown }; tz?: string }>();
+  if (!subscription?.endpoint?.startsWith("https://") || !subscription.keys) return c.json({ error: "订阅信息不对" }, 400);
+  db.savePushSub({ endpoint: subscription.endpoint, ...subscription });
+  if (tz) updateProactive({ tz });
+  return c.json({ ok: true });
+});
+
+app.post("/api/push/unsubscribe", async (c) => {
+  const { endpoint } = await c.req.json<{ endpoint?: string }>();
+  if (endpoint) db.removePushSub(endpoint);
+  return c.json({ ok: true });
+});
+
+app.post("/api/push/test", async (c) => c.json(await sendPush({ title: "Claude", body: "通知已经通了。", url: "/" })));
+
+app.get("/api/proactive", (c) => c.json({ ...getProactive(), subscriptions: db.listPushSubs().length }));
+
+app.put("/api/proactive", async (c) => {
+  const r = updateProactive(await c.req.json());
+  return typeof r === "string" ? c.json({ error: r }, 400) : c.json(r);
+});
+
+// 设置页上的「现在试一条」：跳过所有限制，让 Claude 马上写一条
+app.post("/api/proactive/run", async (c) => c.json(await heartbeat({ force: true })));
+
+// ---- 设备事件：快捷指令用 DEVICE_TOKEN 上报（不走登录 cookie）----
+app.post("/api/events", async (c) => {
+  if (!checkDeviceToken(c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
+  const err = recordEvent(await c.req.json().catch(() => null));
+  return err ? c.json({ error: err }, 400) : c.json({ ok: true });
+});
+
+app.get("/api/device/status", (c) => {
+  const last = db.latestEvent();
+  return c.json({ enabled: deviceEnabled, last: last ?? null });
 });
 
 app.get("/api/memory/status", async (c) => c.json(await memosStatus()));
@@ -132,19 +175,9 @@ app.post("/api/thread/chat", async (c) => {
     try {
       // 摘要是后台更新的，这里重新读一次最新的
       const fresh = db.getConversation(conv.id)!;
-      const system = [
-        persona(),
-        GAME_GUIDE,
-        memosEnabled ? MEMORY_GUIDE : "",
-        wereadEnabled ? WEREAD_GUIDE : "",
-        await coreMemoryBlock(),
-        fresh.summary ? `此前对话的摘要（更早的内容已不在上下文里）：\n${fresh.summary}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n\n");
       const result = await streamChat({
         model,
-        system,
+        system: await buildSystem(fresh),
         messages: buildHistory(fresh),
         signal: abort.signal,
         onText: (delta) => void sse.writeSSE({ event: "text", data: JSON.stringify(delta) }),
@@ -174,6 +207,8 @@ app.use("*", serveStatic({ root: "public" }));
 const port = Number(process.env.PORT ?? 3000);
 serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, async () => {
   console.log(`listening on http://localhost:${port}`);
+  startScheduler();
+  console.log(`device events: ${deviceEnabled ? "ON" : "OFF (DEVICE_TOKEN not set)"}`);
   const s = await memosStatus();
   console.log(
     !s.enabled

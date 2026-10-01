@@ -2,6 +2,26 @@ import type Anthropic from "@anthropic-ai/sdk";
 import * as db from "./db.ts";
 import { summarize } from "./claude.ts";
 import { readImage } from "./uploads.ts";
+import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, MEMORY_GUIDE, WEREAD_GUIDE } from "./persona.ts";
+import { coreMemoryBlock } from "./tools.ts";
+import { memosEnabled } from "./memos.ts";
+import { wereadEnabled } from "./weread.ts";
+import { deviceEnabled } from "./device.ts";
+
+/** 系统提示词：人设 + 各功能的使用说明 + 核心记忆 + 更早对话的摘要。聊天和主动消息共用。 */
+export async function buildSystem(conv: db.Conversation): Promise<string> {
+  return [
+    db.getSetting("system_prompt") || DEFAULT_SYSTEM,
+    GAME_GUIDE,
+    memosEnabled ? MEMORY_GUIDE : "",
+    wereadEnabled ? WEREAD_GUIDE : "",
+    deviceEnabled ? DEVICE_GUIDE : "",
+    await coreMemoryBlock(),
+    conv.summary ? `此前对话的摘要（更早的内容已不在上下文里）：\n${conv.summary}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
 
 // 上下文策略：摘要之后的消息原文都带着；超过 MAX_WINDOW 条时，把最早的压进摘要，只留 KEEP 条。
 // 一次砍一大截而不是每轮滑动一条，这样前缀能稳定很多轮，提示词缓存才有用。
