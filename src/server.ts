@@ -99,9 +99,12 @@ app.put("/api/proactive", async (c) => {
 app.post("/api/proactive/run", async (c) => c.json(await heartbeat({ force: true })));
 
 // ---- 设备事件：快捷指令用 DEVICE_TOKEN 上报（不走登录 cookie）----
+// POST：口令可以放在 Authorization 请求头里，也可以放在网址的 token 参数里；kind/app/detail 同理，请求体里的优先
 app.post("/api/events", async (c) => {
-  if (!checkDeviceToken(c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
-  const err = recordEvent(await c.req.json().catch(() => null));
+  const q = c.req.query();
+  if (!checkDeviceToken(c.req.header("authorization")) && !checkRawToken(q.token)) return c.json({ error: "unauthorized" }, 401);
+  const body = await c.req.json().catch(() => null);
+  const err = recordEvent({ kind: q.kind, app: q.app, detail: q.detail, ...(body && typeof body === "object" ? body : {}) });
   return err ? c.json({ error: err }, 400) : c.json({ ok: true });
 });
 
