@@ -6,11 +6,15 @@ const token = process.env.DEVICE_TOKEN ?? "";
 export const deviceEnabled = token !== "";
 
 /** 校验 Authorization: Bearer <DEVICE_TOKEN>，用定长比较防止通过耗时猜 token */
-export function checkDeviceToken(header: string | undefined): boolean {
-  if (!deviceEnabled || !header?.startsWith("Bearer ")) return false;
-  const a = createHmac("sha256", "dev").update(header.slice(7).trim()).digest();
+export function checkRawToken(given: string | undefined): boolean {
+  if (!deviceEnabled || !given) return false;
+  const a = createHmac("sha256", "dev").update(given.trim()).digest();
   const b = createHmac("sha256", "dev").update(token).digest();
   return timingSafeEqual(a, b);
+}
+
+export function checkDeviceToken(header: string | undefined): boolean {
+  return header?.startsWith("Bearer ") ? checkRawToken(header.slice(7)) : false;
 }
 
 /** 她的时区（由浏览器在保存设置时上报），没有就用 UTC */

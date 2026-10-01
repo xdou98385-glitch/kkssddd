@@ -91,6 +91,17 @@ curl -s -H "Authorization: Bearer 你的token" "http://127.0.0.1:5230/api/v1/mem
 3. 事件类型：`app_open`（app 填 app 名，每个 app 单独做一条自动化）、`app_close`、`focus_on`/`focus_off`、`charging_on`/`charging_off`（detail 可填电量）、`wake`（起床）、`arrive`/`leave`（app 或 detail 填地点）。别的 `kind` 也能传，Claude 会照字面看。
 4. ⚙ 设置里会显示最近一条事件是多久以前，用来确认通了。
 
+**更简单的 GET 写法（推荐，POST 总出问题时用）**：「获取 URL 内容」的方法保持默认的 GET，不设请求头、不设请求体，整个请求只有一个网址：
+
+```
+https://你的地址/api/events?token=你的DEVICE_TOKEN&kind=charging_on
+https://你的地址/api/events?token=你的DEVICE_TOKEN&kind=app_open&app=微信读书
+```
+
+口令里如果有 `+` `/` `=` 这些符号，要写成 `%2B` `%2F` `%3D`（或者换一个只含字母数字的口令：`openssl rand -hex 20`）。口令放在网址里，所以别把这个网址分享出去；服务器日志只记路径，不记问号后面的内容。
+
+排查连接问题：服务器会在日志里记每个 `/api/` 请求（方法、路径、状态码、耗时），`docker compose logs --tail 20` 就能看到手机的请求有没有到。格式不对的请求会记一行 `clientError`。
+
 ## 放到公网（Tailscale Funnel）
 
 不想每次开 Tailscale 的话，用 Funnel 把同一个地址开放到公网：

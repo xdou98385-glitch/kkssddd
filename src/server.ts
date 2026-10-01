@@ -13,12 +13,21 @@ import { DEFAULT_SYSTEM } from "./persona.ts";
 import { wereadStatus } from "./weread.ts";
 import { memosStatus } from "./memos.ts";
 import { publicKey, sendPush } from "./push.ts";
-import { checkDeviceToken, deviceEnabled, recordEvent } from "./device.ts";
+import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
+
+// 访问日志：只记方法、路径（不含问号后面的参数，因为设备口令可能在那里）和状态码，不记请求头和内容
+app.use("*", async (c, next) => {
+  const p = c.req.path;
+  const track = p.startsWith("/api/") || p === "/login";
+  const t0 = Date.now();
+  await next();
+  if (track) console.log(`${c.req.method} ${p} ${c.res.status} ${Date.now() - t0}ms`);
+});
 
 app.use("*", secureHeaders());
 // 每次都让浏览器回来问一遍服务器，保证登录检查不被缓存绕过
@@ -93,6 +102,14 @@ app.post("/api/proactive/run", async (c) => c.json(await heartbeat({ force: true
 app.post("/api/events", async (c) => {
   if (!checkDeviceToken(c.req.header("authorization"))) return c.json({ error: "unauthorized" }, 401);
   const err = recordEvent(await c.req.json().catch(() => null));
+  return err ? c.json({ error: err }, 400) : c.json({ ok: true });
+});
+
+// 更简单的 GET 版本，给快捷指令用：口令放在网址的 token 参数里，不用设请求头和请求体。
+// 例：/api/events?token=口令&kind=app_open&app=微信读书
+app.get("/api/events", (c) => {
+  if (!checkRawToken(c.req.query("token"))) return c.json({ error: "unauthorized" }, 401);
+  const err = recordEvent({ kind: c.req.query("kind"), app: c.req.query("app"), detail: c.req.query("detail") });
   return err ? c.json({ error: err }, 400) : c.json({ ok: true });
 });
 
@@ -205,7 +222,7 @@ app.post("/api/thread/chat", async (c) => {
 app.use("*", serveStatic({ root: "public" }));
 
 const port = Number(process.env.PORT ?? 3000);
-serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, async () => {
+const server = serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, async () => {
   console.log(`listening on http://localhost:${port}`);
   startScheduler();
   console.log(`device events: ${deviceEnabled ? "ON" : "OFF (DEVICE_TOKEN not set)"}`);
@@ -226,3 +243,6 @@ serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, async
         : `weread: ERROR (${w.error})`,
   );
 });
+
+// 收到格式不对的请求时（比如请求头里有非法字符），Node 会直接断开连接；记一笔，排查"连接中断"时有用
+server.on("clientError", (err: NodeJS.ErrnoException) => console.error(`clientError: ${err.code ?? err.message}`));
