@@ -12,7 +12,7 @@ import { isImageName, readImage, saveImage } from "./uploads.ts";
 import { DEFAULT_SYSTEM } from "./persona.ts";
 import { wereadStatus } from "./weread.ts";
 import { memosStatus } from "./memos.ts";
-import { publicKey, sendPush } from "./push.ts";
+import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
@@ -76,6 +76,7 @@ app.post("/api/push/subscribe", async (c) => {
   const { subscription, tz } = await c.req.json<{ subscription?: { endpoint?: string; keys?: unknown }; tz?: string }>();
   if (!subscription?.endpoint?.startsWith("https://") || !subscription.keys) return c.json({ error: "订阅信息不对" }, 400);
   db.savePushSub({ endpoint: subscription.endpoint, ...subscription });
+  rememberOrigin(c.req.header("x-forwarded-host") ?? c.req.header("host"));
   if (tz) updateProactive({ tz });
   return c.json({ ok: true });
 });

@@ -2,8 +2,16 @@
 import webpush from "web-push";
 import * as db from "./db.ts";
 
-// 推送服务要求有个联系方式；随便填一个 mailto 即可，想填自己的邮箱就设 PUSH_CONTACT
-const contact = process.env.PUSH_CONTACT || "mailto:noreply@example.com"; // 用 ||：.env 里留空也走默认值
+// VAPID 要求带一个「联系方式」（mailto: 或 https: 网址）。苹果的推送服务会校验它，
+// 所以默认用站点自己的 https 地址（订阅时记下来）；也可以在 .env 里用 PUSH_CONTACT 指定。
+function contact(): string {
+  return process.env.PUSH_CONTACT || db.getSetting("public_origin") || "mailto:noreply@example.com";
+}
+
+/** 订阅时记下站点的公网地址，例如 https://xxx.ts.net（带端口或不像域名的不记） */
+export function rememberOrigin(host: string | undefined): void {
+  if (host && /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(host)) db.setSetting("public_origin", `https://${host}`);
+}
 
 function vapid(): { publicKey: string; privateKey: string } {
   const raw = db.getSetting("vapid");
@@ -21,25 +29,35 @@ export interface PushPayload {
   url?: string;
 }
 
-/** 发给所有订阅的设备。订阅已失效（404/410）的会顺手清掉。 */
-export async function sendPush(payload: PushPayload): Promise<{ sent: number; removed: number; failed: number }> {
+export interface PushResult {
+  sent: number;
+  removed: number;
+  failed: number;
+  errors: string[]; // 每个失败的原因（状态码 + 推送服务返回的说明），给设置页显示
+}
+
+/** 发给所有订阅的设备。订阅已失效（404/410）的会清掉，并且把原因记下来。 */
+export async function sendPush(payload: PushPayload): Promise<PushResult> {
   const keys = vapid();
-  webpush.setVapidDetails(contact, keys.publicKey, keys.privateKey);
-  const out = { sent: 0, removed: 0, failed: 0 };
+  webpush.setVapidDetails(contact(), keys.publicKey, keys.privateKey);
+  const out: PushResult = { sent: 0, removed: 0, failed: 0, errors: [] };
   for (const sub of db.listPushSubs()) {
     try {
       await webpush.sendNotification(sub, JSON.stringify(payload), { TTL: 6 * 3600, urgency: "normal" });
       out.sent++;
     } catch (err) {
-      const status = (err as { statusCode?: number }).statusCode;
-      if (status === 404 || status === 410) {
+      const e = err as { statusCode?: number; body?: string; message?: string };
+      const detail = `${e.statusCode ?? "?"} ${String(e.body || e.message || "").slice(0, 120)}`.trim();
+      if (e.statusCode === 404 || e.statusCode === 410) {
         db.removePushSub(sub.endpoint);
         out.removed++;
+        out.errors.push(`订阅已失效，已清除（${detail}）`);
       } else {
-        console.error("push failed:", status, (err as Error).message);
         out.failed++;
+        out.errors.push(detail);
       }
     }
   }
+  console.log(`push: sent=${out.sent} removed=${out.removed} failed=${out.failed}${out.errors.length ? " errors=" + JSON.stringify(out.errors) : ""}`);
   return out;
 }

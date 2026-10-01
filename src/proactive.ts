@@ -84,6 +84,7 @@ export interface HeartbeatResult {
   reason?: string;
   text?: string;
   pushed?: number;
+  pushErrors?: string[];
 }
 
 let running = false;
@@ -125,8 +126,8 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
     const text = result.finalText.trim();
     if (!text || /^\[skip\]/i.test(text) || result.stopReason === "refusal") return skip("Claude 觉得现在不用发");
     db.addMessage(conv.id, "assistant", text, [], "proactive");
-    const pushed = (await sendPush({ title: "Claude", body: preview(text), url: "/" })).sent;
-    return { status: "sent", text, pushed };
+    const push = await sendPush({ title: "Claude", body: preview(text), url: "/" });
+    return { status: "sent", text, pushed: push.sent, pushErrors: push.errors };
   } catch (err) {
     console.error("proactive:", err);
     return skip("出错：" + (err instanceof Error ? err.message : String(err)));

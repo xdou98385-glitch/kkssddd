@@ -403,8 +403,18 @@ async function pushState() {
   return reg && (await reg.pushManager.getSubscription()) ? "on" : "off";
 }
 
+/** 服务器那边登记了几台设备；查不到返回 null */
+async function serverSubCount() {
+  try { return (await api("/proactive")).subscriptions; } catch { return null; }
+}
+
 async function refreshPushStatus() {
   const s = await pushState();
+  // 本机有订阅，不代表服务器还认：服务器清掉失效订阅后，这里要说清楚
+  if (s === "on" && (await serverSubCount()) === 0) {
+    setStatus("push-status", "通知：本机有订阅，但服务器没有记录（可能已失效）。点「开启本机通知」重新登记。", true);
+    return;
+  }
   const text = {
     unsupported: "通知：这里还不能收推送。iPhone 需要先「添加到主屏幕」，再从主屏幕上的图标打开。",
     denied: "通知：权限被拒绝了，去 系统设置 → 通知 里打开。",
@@ -421,9 +431,15 @@ async function enablePush() {
     const reg = await navigator.serviceWorker.register("/sw.js");
     await navigator.serviceWorker.ready;
     const { key } = await api("/push/key");
-    const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(key) }));
+    let sub = await reg.pushManager.getSubscription();
+    // 本机有订阅但服务器已经没有记录：旧订阅多半已失效，丢掉换一个新的
+    if (sub && (await serverSubCount()) === 0) {
+      await sub.unsubscribe();
+      sub = null;
+    }
+    sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(key) });
     await api("/push/subscribe", { method: "POST", body: { subscription: sub.toJSON(), tz: timeZone() } });
-    setStatus("push-status", "通知：本机已开启");
+    setStatus("push-status", "通知：本机已开启，并已在服务器登记。可以点「测试通知」了。");
   } catch (err) {
     setStatus("push-status", "开启通知失败：" + err.message, true);
   }
@@ -454,7 +470,9 @@ $("push-enable").onclick = enablePush;
 $("push-test").onclick = async () => {
   try {
     const r = await api("/push/test", { method: "POST" });
-    setStatus("push-status", r.sent ? `测试通知已发出（${r.sent} 台设备）` : "没有已开启通知的设备，先点「开启本机通知」", !r.sent);
+    if (r.sent) setStatus("push-status", `测试通知已发出（${r.sent} 台设备）。手机上没弹的话，检查睡眠专注模式和系统通知设置。`);
+    else if (r.errors?.length) setStatus("push-status", "推送没成功：" + r.errors.join("；"), true);
+    else setStatus("push-status", "服务器没有已开启通知的设备，先点「开启本机通知」", true);
   } catch (err) { setStatus("push-status", "发送失败：" + err.message, true); }
 };
 $("pro-run").onclick = async () => {
@@ -464,7 +482,9 @@ $("pro-run").onclick = async () => {
   try {
     const r = await api("/proactive/run", { method: "POST" });
     if (r.status === "sent") {
-      setStatus("push-status", r.pushed ? "已发出，手机上应该很快弹通知。" : "已写进聊天，但还没有设备开启通知，所以没推送。");
+      if (r.pushed) setStatus("push-status", "已发出，手机上应该很快弹通知。");
+      else if (r.pushErrors?.length) setStatus("push-status", "已写进聊天，但推送没成功：" + r.pushErrors.join("；"), true);
+      else setStatus("push-status", "已写进聊天，但服务器没有已开启通知的设备，所以没推送。点「开启本机通知」登记。", true);
       await refreshThread(true);
     } else setStatus("push-status", "这次没发：" + r.reason, true);
   } catch (err) { setStatus("push-status", "失败：" + err.message, true); }
