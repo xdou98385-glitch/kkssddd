@@ -352,9 +352,17 @@ $("settings-btn").onclick = async () => {
   } catch {
     showMemoryStatus("", false);
   }
+  try {
+    const w = await api("/weread/status");
+    if (!w.enabled) showMemoryStatus("读书：未配置（服务器没读到 WEREAD_API_KEY）", true, "weread-status");
+    else if (w.ok) showMemoryStatus("读书：已连接微信读书", false, "weread-status");
+    else showMemoryStatus("读书：连不上微信读书。" + w.error, true, "weread-status");
+  } catch {
+    showMemoryStatus("", false, "weread-status");
+  }
 };
-function showMemoryStatus(text, bad) {
-  const el = $("memory-status");
+function showMemoryStatus(text, bad, id = "memory-status") {
+  const el = $(id);
   el.textContent = text;
   el.classList.toggle("bad", bad);
 }

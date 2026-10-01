@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
+import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
 
 export interface Tool {
@@ -102,7 +103,57 @@ const gameTools: Tool[] = [
   },
 ];
 
-export const tools: Tool[] = [...gameTools, ...(memosEnabled ? memoryTools : [])];
+// ---- 微信读书：只给一个工具，接口表和字段规则放在提示词里（见 persona.ts 的 WEREAD_GUIDE）----
+const WEREAD_LABELS: Record<string, string> = {
+  "/store/search": "搜书", "/book/info": "看书的详情", "/book/chapterinfo": "看章节目录", "/book/getprogress": "看阅读进度",
+  "/shelf/sync": "翻书架", "/readdata/detail": "看阅读统计", "/user/notebooks": "翻笔记", "/book/bookmarklist": "翻划线",
+  "/review/list/mine": "翻她的想法", "/review/list": "看点评", "/review/single": "看一条想法", "/book/bestbookmarks": "看热门划线",
+  "/book/underlines": "看划线热度", "/book/readreviews": "看划线下的想法", "/book/recommend": "看推荐", "/book/similar": "找相似的书",
+  "/discover/interact/type3": "看朋友在读什么", "/_list": "看接口说明",
+};
+
+const wereadTool: Tool = {
+  def: {
+    name: "weread",
+    description:
+      "查询小月的微信读书（只读）：搜书、书架、阅读进度、阅读统计、划线、想法、推荐等。api_name 选接口，params_json 是一个 JSON 对象字符串，业务参数平铺，如 {\"keyword\":\"三体\",\"scope\":10}；没有参数传 {}。",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        api_name: { type: "string", enum: [...WEREAD_APIS] },
+        params_json: { type: "string", description: "JSON 对象字符串，参数平铺，没有参数就传 {}" },
+      },
+      required: ["api_name", "params_json"],
+      additionalProperties: false,
+    },
+  },
+  run: async (input) => {
+    let params: unknown;
+    try {
+      params = JSON.parse(String(input.params_json || "{}"));
+    } catch {
+      throw new Error("params_json 不是合法的 JSON 对象字符串");
+    }
+    if (typeof params !== "object" || params === null || Array.isArray(params))
+      throw new Error("params_json 必须是 JSON 对象");
+    return callWeRead(String(input.api_name), params as Record<string, unknown>);
+  },
+  label: (input) => {
+    let extra = "";
+    try {
+      const p = JSON.parse(String(input.params_json || "{}"));
+      if (typeof p.keyword === "string") extra = `：${p.keyword}`;
+    } catch { /* 标签只是提示，解析失败就不带参数 */ }
+    return `${WEREAD_LABELS[input.api_name] ?? "查微信读书"}${extra}`;
+  },
+};
+
+export const tools: Tool[] = [
+  ...gameTools,
+  ...(memosEnabled ? memoryTools : []),
+  ...(wereadEnabled ? [wereadTool] : []),
+];
 export const findTool = (name: string) => tools.find((t) => t.def.name === name);
 
 /** 每次对话开头注入的核心记忆（Memos 里带 #core 标签的笔记），拉不到就当没有 */

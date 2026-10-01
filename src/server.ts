@@ -9,7 +9,8 @@ import * as db from "./db.ts";
 import { authEnabled, login, logout, requireLogin } from "./auth.ts";
 import { buildHistory, maybeSummarize } from "./context.ts";
 import { isImageName, readImage, saveImage } from "./uploads.ts";
-import { DEFAULT_SYSTEM, GAME_GUIDE, MEMORY_GUIDE } from "./persona.ts";
+import { DEFAULT_SYSTEM, GAME_GUIDE, MEMORY_GUIDE, WEREAD_GUIDE } from "./persona.ts";
+import { wereadEnabled, wereadStatus } from "./weread.ts";
 import { coreMemoryBlock } from "./tools.ts";
 import { memosEnabled, memosStatus } from "./memos.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
@@ -58,6 +59,7 @@ app.post("/api/game/sudoku/move", async (c) => {
 });
 
 app.get("/api/memory/status", async (c) => c.json(await memosStatus()));
+app.get("/api/weread/status", async (c) => c.json(await wereadStatus()));
 
 app.get("/api/models", (c) => c.json({ models: MODELS, default: DEFAULT_MODEL }));
 
@@ -134,6 +136,7 @@ app.post("/api/thread/chat", async (c) => {
         persona(),
         GAME_GUIDE,
         memosEnabled ? MEMORY_GUIDE : "",
+        wereadEnabled ? WEREAD_GUIDE : "",
         await coreMemoryBlock(),
         fresh.summary ? `此前对话的摘要（更早的内容已不在上下文里）：\n${fresh.summary}` : "",
       ]
@@ -178,5 +181,13 @@ serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, async
       : s.ok
         ? "memory: ON (Memos reachable)"
         : `memory: ERROR (${s.error})`,
+  );
+  const w = await wereadStatus();
+  console.log(
+    !w.enabled
+      ? "weread: OFF (WEREAD_API_KEY not set in the container)"
+      : w.ok
+        ? "weread: ON (gateway reachable)"
+        : `weread: ERROR (${w.error})`,
   );
 });

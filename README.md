@@ -58,6 +58,15 @@ curl -s -H "Authorization: Bearer 你的token" "http://127.0.0.1:5230/api/v1/mem
 
 能返回笔记的 JSON 就是通的。
 
+## 微信读书
+
+在 `.env` 里填 `WEREAD_API_KEY`（Agent Gateway 的 token，形如 `wrk-xxxx`）就会启用，不填则没有读书功能。只读：搜书、书架、阅读进度和统计、划线和想法、推荐、朋友在读。
+
+- 给 Claude 的只有一个 `weread` 工具，接口表和易错字段规则（进度是百分比、时长是秒、星级换算等）写在 `src/persona.ts` 的 `WEREAD_GUIDE` 里。
+- 网关升级要求（`upgrade_info`）和 401 都会原样告诉你，不会反复重试。
+- ⚙ 设置里有一行连接状态，启动日志里也有 `weread:` 一行。
+- token 只放服务器的 `.env`，不要提交到 git。
+
 ## 放到公网（Tailscale Funnel）
 
 不想每次开 Tailscale 的话，用 Funnel 把同一个地址开放到公网：
@@ -91,6 +100,7 @@ src/claude.ts   调 Claude（模型列表、流式、工具循环、缓存、拒
 src/persona.ts  默认人设
 src/memos.ts    Memos 读写
 src/sudoku.ts   数独出题、校验、提示
+src/weread.ts   微信读书网关调用
 src/tools.ts    给 Claude 用的工具（搜索/保存记忆）
 src/db.ts       SQLite（对话、消息、设置）
 src/context.ts  上下文管理（滚动摘要、图片窗口）
