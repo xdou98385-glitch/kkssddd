@@ -34,6 +34,7 @@ export async function streamChat(opts: {
   signal: AbortSignal;
   onText: (delta: string) => void;
   onTool: (label: string, name: string) => void;
+  tag?: string; // 日志里标注这次调用是干嘛的（chat / proactive）
 }): Promise<{ text: string; finalText: string; stopReason: string | null; toolsUsed: string[] }> {
   const { model } = opts;
   const messages: Anthropic.Beta.BetaMessageParam[] = [...opts.messages];
@@ -41,6 +42,9 @@ export async function streamChat(opts: {
   let text = ""; // 整条回复，含调用工具前说的话
   let finalText = ""; // 只有最后一轮（真正的回复）
   let stopReason: string | null = null;
+  const used = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }; // 本次所有轮次的 token 合计
+  const logUsage = () =>
+    console.log(`usage: ${opts.tag ?? "chat"} ${model.id} in=${used.input} cache_read=${used.cacheRead} cache_write=${used.cacheWrite} out=${used.output}`);
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
     const stream = client.beta.messages.stream(
@@ -80,9 +84,13 @@ export async function streamChat(opts: {
       final = await stream.finalMessage();
     } catch (err) {
       // 用户中途停止：保留已生成的部分
-      if (opts.signal.aborted) return { text, finalText, stopReason: "aborted", toolsUsed };
+      if (opts.signal.aborted) { logUsage(); return { text, finalText, stopReason: "aborted", toolsUsed }; }
       throw err;
     }
+    used.input += final.usage.input_tokens;
+    used.output += final.usage.output_tokens;
+    used.cacheRead += final.usage.cache_read_input_tokens ?? 0;
+    used.cacheWrite += final.usage.cache_creation_input_tokens ?? 0;
     stopReason = final.stop_reason;
     if (stopReason !== "tool_use") break;
 
@@ -110,6 +118,7 @@ export async function streamChat(opts: {
     }
     messages.push({ role: "user", content: results });
   }
+  logUsage();
   return { text, finalText, stopReason, toolsUsed };
 }
 

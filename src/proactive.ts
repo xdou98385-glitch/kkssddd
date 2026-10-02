@@ -120,6 +120,7 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
       signal: AbortSignal.timeout(120_000),
       onText: () => {},
       onTool: () => {},
+      tag: "proactive",
     });
 
     // 只取最后一轮的文字：调用工具之前说的话不算
