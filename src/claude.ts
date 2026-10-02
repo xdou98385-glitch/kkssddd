@@ -13,7 +13,8 @@ export interface ModelOption {
 
 // 下拉框里显示的模型。Haiku 4.5 不支持 effort 参数，所以没设。
 export const MODELS: ModelOption[] = [
-  { id: "claude-sonnet-5-5", label: "Sonnet 5.5（日常）", effort: "medium", fallback: true },
+  // effort 低了它会少调工具、凭印象回答；陪伴场景里"真的去查"比省 token 重要，所以日常模型用 high
+  { id: "claude-sonnet-5-5", label: "Sonnet 5.5（日常）", effort: "high", fallback: true },
   { id: "claude-opus-5-5", label: "Opus 5.5（难题）", effort: "medium", fallback: true },
   { id: "claude-haiku-4-5", label: "Haiku 4.5（便宜快）", fallback: false },
 ];
@@ -33,9 +34,10 @@ export async function streamChat(opts: {
   signal: AbortSignal;
   onText: (delta: string) => void;
   onTool: (label: string, name: string) => void;
-}): Promise<{ text: string; finalText: string; stopReason: string | null }> {
+}): Promise<{ text: string; finalText: string; stopReason: string | null; toolsUsed: string[] }> {
   const { model } = opts;
   const messages: Anthropic.Beta.BetaMessageParam[] = [...opts.messages];
+  const toolsUsed: string[] = []; // 真正成功执行过的工具（由代码记录，不是模型自己说的）
   let text = ""; // 整条回复，含调用工具前说的话
   let finalText = ""; // 只有最后一轮（真正的回复）
   let stopReason: string | null = null;
@@ -78,7 +80,7 @@ export async function streamChat(opts: {
       final = await stream.finalMessage();
     } catch (err) {
       // 用户中途停止：保留已生成的部分
-      if (opts.signal.aborted) return { text, finalText, stopReason: "aborted" };
+      if (opts.signal.aborted) return { text, finalText, stopReason: "aborted", toolsUsed };
       throw err;
     }
     stopReason = final.stop_reason;
@@ -93,7 +95,9 @@ export async function streamChat(opts: {
       try {
         if (!tool) throw new Error(`未知工具 ${block.name}`);
         opts.onTool(tool.label(block.input), block.name);
-        results.push({ type: "tool_result", tool_use_id: block.id, content: await tool.run(block.input) });
+        const output = await tool.run(block.input);
+        if (!toolsUsed.includes(block.name)) toolsUsed.push(block.name);
+        results.push({ type: "tool_result", tool_use_id: block.id, content: output });
       } catch (err) {
         console.error(`tool ${block.name}:`, err);
         results.push({
@@ -106,7 +110,7 @@ export async function streamChat(opts: {
     }
     messages.push({ role: "user", content: results });
   }
-  return { text, finalText, stopReason };
+  return { text, finalText, stopReason, toolsUsed };
 }
 
 const SUMMARY_MODEL = "claude-haiku-4-5";

@@ -44,6 +44,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
 `);
 ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的
+ensureColumn("messages", "tools", "TEXT"); // JSON 数组：这条回复真正调用过的工具名（系统记录，不是模型自己说的）
 ensureColumn("messages", "images", "TEXT"); // JSON 数组：上传图片的文件名
 ensureColumn("conversations", "summary", "TEXT NOT NULL DEFAULT ''"); // 更早对话的摘要
 ensureColumn("conversations", "summarized_upto", "INTEGER NOT NULL DEFAULT 0"); // 摘要覆盖到的最后一条消息 id
@@ -62,6 +63,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   images: string[];
+  tools: string[];
   created_at: number;
 }
 
@@ -70,6 +72,7 @@ interface MessageRow {
   role: "user" | "assistant";
   content: string;
   images: string | null;
+  tools: string | null;
   created_at: number;
 }
 const toMessage = (r: MessageRow): Message => ({
@@ -77,6 +80,7 @@ const toMessage = (r: MessageRow): Message => ({
   role: r.role,
   content: r.content,
   images: r.images ? JSON.parse(r.images) : [],
+  tools: r.tools ? JSON.parse(r.tools) : [],
   created_at: r.created_at,
 });
 
@@ -124,7 +128,7 @@ export function messagePage(
 ): { messages: Message[]; hasMore: boolean } {
   const rows = db
     .prepare(
-      `SELECT id, role, content, images, created_at FROM messages
+      `SELECT id, role, content, images, tools, created_at FROM messages
        WHERE conversation_id = ? AND id < ? ORDER BY id DESC LIMIT ?`,
     )
     .all(conversationId, before ?? Number.MAX_SAFE_INTEGER, limit + 1) as unknown as MessageRow[];
@@ -137,7 +141,7 @@ export function windowMessages(conversationId: string, afterId: number): Message
   return (
     db
       .prepare(
-        `SELECT id, role, content, images, created_at FROM messages
+        `SELECT id, role, content, images, tools, created_at FROM messages
          WHERE conversation_id = ? AND id > ? ORDER BY id`,
       )
       .all(conversationId, afterId) as unknown as MessageRow[]
@@ -150,10 +154,19 @@ export function addMessage(
   content: string,
   images: string[] = [],
   kind: "proactive" | null = null,
+  tools: string[] = [],
 ): void {
   db.prepare(
-    "INSERT INTO messages (conversation_id, role, content, images, kind, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(conversationId, role, content, images.length ? JSON.stringify(images) : null, kind, now());
+    "INSERT INTO messages (conversation_id, role, content, images, kind, tools, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    conversationId,
+    role,
+    content,
+    images.length ? JSON.stringify(images) : null,
+    kind,
+    tools.length ? JSON.stringify(tools) : null,
+    now(),
+  );
   db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now(), conversationId);
 }
 

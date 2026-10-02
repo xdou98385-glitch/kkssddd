@@ -1,7 +1,7 @@
 // 主动消息：定时「心跳」让 Claude 决定要不要主动找小月；要的话写进对话并推送到手机。
 import * as db from "./db.ts";
 import { DEFAULT_MODEL, MODELS, findModel, streamChat } from "./claude.ts";
-import { buildHistory, buildSystem } from "./context.ts";
+import { buildHistory, buildSystem, stripToolMarks } from "./context.ts";
 import { activitySummary, deviceEnabled } from "./device.ts";
 import { sendPush } from "./push.ts";
 
@@ -125,7 +125,7 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
     // 只取最后一轮的文字：调用工具之前说的话不算
     const text = result.finalText.trim();
     if (!text || /^\[skip\]/i.test(text) || result.stopReason === "refusal") return skip("Claude 觉得现在不用发");
-    db.addMessage(conv.id, "assistant", text, [], "proactive");
+    db.addMessage(conv.id, "assistant", stripToolMarks(text), [], "proactive", result.toolsUsed);
     const push = await sendPush({ title: "Claude", body: preview(text), url: "/" });
     return { status: "sent", text, pushed: push.sent, pushErrors: push.errors };
   } catch (err) {

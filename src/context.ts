@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import * as db from "./db.ts";
 import { summarize } from "./claude.ts";
 import { readImage } from "./uploads.ts";
-import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, MEMORY_GUIDE, WEREAD_GUIDE } from "./persona.ts";
+import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, WEREAD_GUIDE } from "./persona.ts";
 import { coreMemoryBlock } from "./tools.ts";
 import { memosEnabled } from "./memos.ts";
 import { wereadEnabled } from "./weread.ts";
@@ -12,6 +12,7 @@ import { deviceEnabled } from "./device.ts";
 export async function buildSystem(conv: db.Conversation): Promise<string> {
   return [
     db.getSetting("system_prompt") || DEFAULT_SYSTEM,
+    HONESTY_GUIDE,
     GAME_GUIDE,
     memosEnabled ? MEMORY_GUIDE : "",
     wereadEnabled ? WEREAD_GUIDE : "",
@@ -32,8 +33,16 @@ const IMAGE_RECENT = 10;
 
 type Content = Anthropic.Beta.BetaMessageParam["content"];
 
+/** 助手的回复后面附上系统记录的真实工具调用，让它在回看历史时分得清哪些说法有依据 */
+export const TOOL_MARK = (tools: string[]) => `[系统记录：这条回复调用了工具 ${tools.join("、")}]`;
+/** 模型自己写出来的这种记录一律去掉，防止伪造 */
+export const stripToolMarks = (text: string) => text.replace(/\[系统记录[^\]]*\]/g, "").trim();
+
 function toParam(m: db.Message, withImages: boolean): Anthropic.Beta.BetaMessageParam {
-  if (!m.images.length) return { role: m.role, content: m.content };
+  if (!m.images.length) {
+    const marked = m.role === "assistant" && m.tools.length ? `${m.content}\n\n${TOOL_MARK(m.tools)}` : m.content;
+    return { role: m.role, content: marked };
+  }
   const blocks: Exclude<Content, string> = [];
   if (withImages) {
     for (const name of m.images) {

@@ -7,7 +7,7 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import * as db from "./db.ts";
 import { authEnabled, login, logout, requireLogin } from "./auth.ts";
-import { buildHistory, buildSystem, maybeSummarize } from "./context.ts";
+import { buildHistory, buildSystem, maybeSummarize, stripToolMarks } from "./context.ts";
 import { isImageName, readImage, saveImage } from "./uploads.ts";
 import { DEFAULT_SYSTEM } from "./persona.ts";
 import { wereadStatus } from "./weread.ts";
@@ -193,6 +193,7 @@ app.post("/api/thread/chat", async (c) => {
     const abort = new AbortController();
     sse.onAbort(() => abort.abort());
     let text = "";
+    let toolsUsed: string[] = [];
     try {
       // 摘要是后台更新的，这里重新读一次最新的
       const fresh = db.getConversation(conv.id)!;
@@ -209,6 +210,7 @@ app.post("/api/thread/chat", async (c) => {
         },
       });
       text = result.text;
+      toolsUsed = result.toolsUsed;
       if (result.stopReason === "refusal")
         await sse.writeSSE({ event: "error", data: JSON.stringify("这条被安全策略拒绝了") });
       else if (result.stopReason === "max_tokens")
@@ -217,7 +219,9 @@ app.post("/api/thread/chat", async (c) => {
       console.error(err);
       await sse.writeSSE({ event: "error", data: JSON.stringify(describeError(err)) });
     }
-    if (text) db.addMessage(conv.id, "assistant", text);
+    // 去掉模型自己写的「系统记录」（防伪造），真实的工具调用由代码另外记下
+    text = stripToolMarks(text);
+    if (text) db.addMessage(conv.id, "assistant", text, [], null, toolsUsed);
     await sse.writeSSE({ event: "done", data: "{}" });
     void maybeSummarize(conv.id);
   });
