@@ -38,7 +38,7 @@ ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_
 - 只有一条持续对话；最近消息原文，超过 60 条时前面压成 Haiku 写的滚动摘要，只留 30 条（批量折叠才能保住提示词缓存）。界面历史完整。
 - 图片发送前浏览器压缩到长边 1568 的 JPEG，只有最近 10 条消息里的图会真发给模型。
 - **防编造**：模型老是不调工具就说"我看了棋盘/翻了笔记"。已修：代码记录真实调用的工具存 `messages.tools`，回放历史时给助手回复加 `[系统记录：这条回复调用了工具 …]`，模型自己写的这种行会被 `stripToolMarks` 删掉；HONESTY_GUIDE 写了规则；Sonnet effort 改成 high。**这个修复还没在她真机上验证**，她打算清空聊天重新开始后观察。
-- 工具调用的小字（"看了眼棋盘"）只在当次显示，刷新后不保留。
+- 工具调用的小字：当次显示带参数的，刷新后按 `messages.tools` 里的工具名显示通用小字（`app.js` 的 TOOL_LABELS），参数没存。
 - 主动消息每次心跳都会调 Claude（花钱），默认关闭，她在设置里勾选开启；强制测试按钮「现在试一条」跳过所有限制。
 - iPhone 推送：必须"添加到主屏幕"后从图标打开；已在她真机上跑通。
 
@@ -49,11 +49,13 @@ ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_
 - 没装中文衬线字体，截图里衬线是回退字体，真机（iOS 宋体）才对。
 - Hono 自带 logger 会把问号后的参数（含设备口令）打进日志，所以用了自己的访问日志。
 
+- **聊天记录曾每次更新都丢**：她服务器 `.env` 里有 `DB_PATH=data/chat.db`，盖掉了 Dockerfile 的 `/data/chat.db`，库落在容器内部。已在 docker-compose.yml 的 environment 里写死 `DB_PATH: /data/chat.db`（environment 优先于 env_file），并帮她把当时的库拷到了 `./data/`。之后 `./data/chat.db` 应当持续存在。
+
 ## 待办 / 她提过的想法
-- 确认她已轮换 DEVICE_TOKEN；补一条"拔掉电源"快捷指令（kind=charging_off）。
+- 确认她已轮换 DEVICE_TOKEN（charging_off 快捷指令她已补）。
 - 观察主动消息的花销和分寸（太贵调大 PROACTIVE_EVERY_MIN，太频繁调每天上限）。
 - 验证防编造修复在真机上是否有效；如果还会编，再想办法（比如把工具结果也存进历史、必要时强制先调工具）。
 - 语音（她看的 Voicebox 在 Mac M4 上调不出满意效果，先放着；可选 Kokoro 或云端 TTS）。
 - 小红书 / X 接入（最脆弱，放最后）；更多益智小游戏；Minecraft（需要更大的服务器，她最近不玩大游戏）。
-- 工具调用小字持久化；把外观里"招牌元素"（月相）用到更多地方。
+- 把外观里"招牌元素"（月相）用到更多地方。
 - 是否要把分支合并到主分支（她没要求前不要建 PR）。
