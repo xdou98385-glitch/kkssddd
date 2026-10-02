@@ -15,6 +15,8 @@ export interface ModelOption {
 export const MODELS: ModelOption[] = [
   // effort 低了它会少调工具、凭印象回答；陪伴场景里"真的去查"比省 token 重要，所以日常模型用 high
   { id: "claude-sonnet-5-5", label: "Sonnet 5.5（日常）", effort: "high", fallback: true },
+  // 4.6 不在服务器端 fallback 的支持名单里；没传 thinking 参数时它不思考，单价比 5.5 高 50%
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6（旧语气）", effort: "high", fallback: false },
   { id: "claude-opus-5-5", label: "Opus 5.5（难题）", effort: "medium", fallback: true },
   { id: "claude-haiku-4-5", label: "Haiku 4.5（便宜快）", fallback: false },
 ];
