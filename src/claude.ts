@@ -36,6 +36,7 @@ export async function streamChat(opts: {
   signal: AbortSignal;
   onText: (delta: string) => void;
   onTool: (label: string, name: string) => void;
+  effort?: "low" | "medium" | "high"; // 覆盖模型默认的 effort（模型本身不支持 effort 时无效）
   tag?: string; // 日志里标注这次调用是干嘛的（chat / proactive）
 }): Promise<{ text: string; finalText: string; stopReason: string | null; toolsUsed: string[] }> {
   const { model } = opts;
@@ -56,7 +57,7 @@ export async function streamChat(opts: {
         // 自动缓存最后一个可缓存块：长对话每轮只需为新增内容付全价
         cache_control: { type: "ephemeral" },
         ...(opts.system ? { system: opts.system } : {}),
-        ...(model.effort ? { output_config: { effort: model.effort } } : {}),
+        ...(model.effort ? { output_config: { effort: opts.effort ?? model.effort } } : {}),
         ...(tools.length ? { tools: tools.map((t) => t.def) } : {}),
         // 被安全分类器拒绝时，服务器自动换模型重跑
         ...(model.fallback

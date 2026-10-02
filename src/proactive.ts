@@ -120,6 +120,7 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
       signal: AbortSignal.timeout(120_000),
       onText: () => {},
       onTool: () => {},
+      effort: "medium", // 只是决定要不要发一句话，不用想太深；聊天仍用模型默认的 high
       tag: "proactive",
     });
 
