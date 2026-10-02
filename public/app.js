@@ -66,6 +66,17 @@ function toolNote(label) {
   return n;
 }
 
+// 历史里只存了工具名，没存当次的参数，所以刷新后用通用小字
+const TOOL_LABELS = {
+  search_memories: "翻了记忆",
+  save_memory: "记了一笔",
+  sudoku_view: "看了眼棋盘",
+  sudoku_hint: "想了个提示",
+  sudoku_place: "落了子",
+  weread: "查了微信读书",
+  device_activity: "看了眼她手机最近在干嘛",
+};
+
 function dayDivider(key) {
   const d = document.createElement("div");
   d.className = "day";
@@ -94,6 +105,7 @@ function renderBatch(msgs) {
   for (const m of msgs) {
     const k = dayKey(m.created_at);
     if (k !== day) { nodes.push(dayDivider(k)); day = k; }
+    if (m.role === "assistant") for (const t of m.tools || []) nodes.push(toolNote(TOOL_LABELS[t] || t));
     nodes.push(bubble(m.role, m.content, m.images, m.created_at).wrap);
   }
   return { nodes, lastDay: day };
