@@ -11,6 +11,20 @@ const model = process.env.TTS_MODEL || "eleven_flash_v2_5"; // Flash 每字符�
 const MAX_CHARS = Math.max(50, Number(process.env.TTS_MAX_CHARS || 400) || 400); // 单条最多念多少字
 const MONTHLY_CHARS = Math.max(0, Number(process.env.TTS_MONTHLY_CHARS || 20000) || 20000); // 每月最多生成多少字
 
+// 声音的"慢"和"表现力"。speed 0.7–1.2（越小越慢），stability 越低越有起伏，style 越高越夸张
+const num = (v: string | undefined, d: number, lo: number, hi: number) => {
+  const n = Number(v);
+  return v && Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d;
+};
+const voiceSettings = {
+  speed: num(process.env.TTS_SPEED, 0.85, 0.7, 1.2),
+  stability: num(process.env.TTS_STABILITY, 0.35, 0, 1),
+  similarity_boost: 0.75,
+  style: num(process.env.TTS_STYLE, 0.3, 0, 1),
+};
+const callMe = process.env.TTS_CALL_ME || "Kay"; // 英文里怎么称呼她
+const PROMPT_VERSION = "v2"; // 改了翻译提示词就加一，旧译文缓存自动作废
+
 export const ttsEnabled = Boolean(key && voice);
 
 const dir = join(dirname(process.env.DB_PATH ?? "data/chat.db"), "tts");
@@ -47,11 +61,11 @@ const translations = new Map<string, Promise<string>>();
 export async function speechText(raw: string): Promise<string> {
   const text = speakable(raw);
   if (!text || !translateOn) return text;
-  const file = join(dir, createHash("sha256").update(`${target}|${text}`).digest("hex").slice(0, 32) + ".txt");
+  const file = join(dir, createHash("sha256").update(`${PROMPT_VERSION}|${target}|${callMe}|${text}`).digest("hex").slice(0, 32) + ".txt");
   if (existsSync(file)) return readFileSync(file, "utf8");
   let job = translations.get(file);
   if (!job) {
-    job = translateForSpeech(text, target)
+    job = translateForSpeech(text, target, callMe)
       .then((t) => {
         if (!t) throw new TtsError("翻译失败");
         writeFileSync(file, t);
@@ -81,7 +95,7 @@ const inflight = new Map<string, Promise<Buffer>>();
 /** 返回 mp3；缓存命中不花钱 */
 export async function synthesize(text: string): Promise<Buffer> {
   if (!ttsEnabled) throw new TtsError("还没配置语音");
-  const name = createHash("sha256").update(`${model}|${voice}|${text}`).digest("hex").slice(0, 32) + ".mp3";
+  const name = createHash("sha256").update(`${model}|${voice}|${JSON.stringify(voiceSettings)}|${text}`).digest("hex").slice(0, 32) + ".mp3";
   const file = join(dir, name);
   if (existsSync(file)) return readFileSync(file);
   const pending = inflight.get(name);
@@ -95,7 +109,7 @@ export async function synthesize(text: string): Promise<Buffer> {
       {
         method: "POST",
         headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
-        body: JSON.stringify({ text, model_id: model }),
+        body: JSON.stringify({ text, model_id: model, voice_settings: voiceSettings }),
         signal: AbortSignal.timeout(45_000),
       },
     );

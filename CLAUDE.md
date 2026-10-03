@@ -30,7 +30,7 @@ public/           index.html / app.js / style.css（磨砂玻璃单色风）/ lo
 ```
 
 ## .env 变量（只写名字）
-ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, TTS_MODEL(默认 eleven_flash_v2_5), TTS_MAX_CHARS(600), TTS_MONTHLY_CHARS(20000), PROACTIVE_EVERY_MIN(默认90), PUSH_CONTACT(可空), PORT/DB_PATH。空值要用 `||` 而不是 `??` 判断（compose 的 env_file 会把空行变成空字符串）。
+ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, TTS_MODEL(默认 eleven_flash_v2_5), TTS_MAX_CHARS(400), TTS_MONTHLY_CHARS(20000), TTS_SPEED(0.85)/TTS_STABILITY(0.35)/TTS_STYLE(0.3), TTS_CALL_ME(默认 Kay), TTS_TRANSLATE_TO(默认 English), PROACTIVE_EVERY_MIN(默认90), PUSH_CONTACT(可空), PORT/DB_PATH。空值要用 `||` 而不是 `??` 判断（compose 的 env_file 会把空行变成空字符串）。
 
 ## 部署
 服务器上：`cd ~/kkssddd && git pull && docker compose up -d --build`。数据在 `./data/`（chat.db + uploads）。设置页(⚙)里有 Memos/读书/设备/通知的连接状态行，启动日志有 `memory:`/`weread:`/`device events:` 行，排查先看这些。

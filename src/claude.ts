@@ -147,14 +147,16 @@ export async function summarize(previous: string, transcript: string): Promise<s
 }
 
 /** 把一条回复翻成适合念出来的口语（语音用）。用日常模型的低 effort，语气比 Haiku 稳 */
-export async function translateForSpeech(text: string, language: string): Promise<string> {
+export async function translateForSpeech(text: string, language: string, callMe: string): Promise<string> {
   const res = await client.messages.create({
     model: DEFAULT_MODEL,
     max_tokens: 4000,
     output_config: { effort: "low" },
     system:
       `你把一段中文翻成自然的口语 ${language}，用来做语音朗读。这段话是一个陪伴型 AI 对恋人般亲近的人说的，随意、松弛、带点毒舌，翻译要保留这个语气和人称。` +
-      "忠实原意，不增不减，不加解释和引号，只输出译文。中文人名和昵称用拼音。数字和时间写成适合念出来的样子。",
+      "忠实原意，不增不减，不加解释和引号，只输出译文。" +
+      `原文里称呼她的地方（小月、新月、小k、Kay、月 等）统一译成 "${callMe}"；原文没称呼她就不要凭空加名字。其他中文人名用拼音。数字和时间写成适合念出来的样子。` +
+      "要念得慢、懒、低声、随意，像半躺着说话：短句，多用逗号、破折号和省略号制造停顿，用口语缩写（gonna、kinda、'cause），别写成书面语，也别一口气长句到底。",
     messages: [{ role: "user", content: text }],
   });
   return res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
