@@ -3,11 +3,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as db from "./db.ts";
+import { translateForSpeech } from "./claude.ts";
 
 const key = process.env.ELEVENLABS_API_KEY || "";
 const voice = process.env.ELEVENLABS_VOICE_ID || "";
 const model = process.env.TTS_MODEL || "eleven_flash_v2_5"; // Flash 每字符只算 0.5 额度；想要更好的音质换 eleven_multilingual_v2
-const MAX_CHARS = Math.max(50, Number(process.env.TTS_MAX_CHARS || 600) || 600); // 单条最多念多少字
+const MAX_CHARS = Math.max(50, Number(process.env.TTS_MAX_CHARS || 400) || 400); // 单条最多念多少字
 const MONTHLY_CHARS = Math.max(0, Number(process.env.TTS_MONTHLY_CHARS || 20000) || 20000); // 每月最多生成多少字
 
 export const ttsEnabled = Boolean(key && voice);
@@ -35,6 +36,32 @@ export function speakable(raw: string): string {
     t = end > MAX_CHARS * 0.5 ? cut.slice(0, end + 1) : cut;
   }
   return t;
+}
+
+// 念之前先翻成这种语言（她的声音是英文的）。TTS_TRANSLATE_TO=none 关掉
+const target = process.env.TTS_TRANSLATE_TO || "English";
+const translateOn = target.toLowerCase() !== "none";
+const translations = new Map<string, Promise<string>>();
+
+/** 要念的最终文字：清理后的原文，必要时翻译；译文缓存到磁盘，每条只翻一次 */
+export async function speechText(raw: string): Promise<string> {
+  const text = speakable(raw);
+  if (!text || !translateOn) return text;
+  const file = join(dir, createHash("sha256").update(`${target}|${text}`).digest("hex").slice(0, 32) + ".txt");
+  if (existsSync(file)) return readFileSync(file, "utf8");
+  let job = translations.get(file);
+  if (!job) {
+    job = translateForSpeech(text, target)
+      .then((t) => {
+        if (!t) throw new TtsError("翻译失败");
+        writeFileSync(file, t);
+        console.log(`usage: tts-translate ${text.length} chars -> ${t.length} chars`);
+        return t;
+      })
+      .finally(() => translations.delete(file));
+    translations.set(file, job);
+  }
+  return job;
 }
 
 const month = () => new Date().toISOString().slice(0, 7);

@@ -16,7 +16,7 @@ import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
-import { TtsError, speakable, synthesize, ttsEnabled } from "./tts.ts";
+import { TtsError, speechText, synthesize, ttsEnabled } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
@@ -247,10 +247,10 @@ app.post("/api/thread/regenerate", (c) => {
 app.get("/api/tts/:id", async (c) => {
   if (!ttsEnabled) return c.json({ error: "还没配置语音" }, 404);
   const content = db.assistantText(Number(c.req.param("id")));
-  const text = content ? speakable(content) : "";
-  if (!text) return c.json({ error: "这条没有可念的内容" }, 400);
   let audio: Buffer;
   try {
+    const text = content ? await speechText(content) : "";
+    if (!text) return c.json({ error: "这条没有可念的内容" }, 400);
     audio = await synthesize(text);
   } catch (err) {
     if (!(err instanceof TtsError)) console.error("tts:", err);

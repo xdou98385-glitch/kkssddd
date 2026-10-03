@@ -146,6 +146,20 @@ export async function summarize(previous: string, transcript: string): Promise<s
   return res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
 }
 
+/** 把一条回复翻成适合念出来的口语（语音用）。用日常模型的低 effort，语气比 Haiku 稳 */
+export async function translateForSpeech(text: string, language: string): Promise<string> {
+  const res = await client.messages.create({
+    model: DEFAULT_MODEL,
+    max_tokens: 4000,
+    output_config: { effort: "low" },
+    system:
+      `你把一段中文翻成自然的口语 ${language}，用来做语音朗读。这段话是一个陪伴型 AI 对恋人般亲近的人说的，随意、松弛、带点毒舌，翻译要保留这个语气和人称。` +
+      "忠实原意，不增不减，不加解释和引号，只输出译文。中文人名和昵称用拼音。数字和时间写成适合念出来的样子。",
+    messages: [{ role: "user", content: text }],
+  });
+  return res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
+}
+
 export function describeError(err: unknown): string {
   if (err instanceof Anthropic.AuthenticationError) return "API key 无效或没设置（检查 ANTHROPIC_API_KEY）";
   if (err instanceof Anthropic.RateLimitError) return "触发限流了，稍后再试";
