@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { secureHeaders } from "hono/secure-headers";
@@ -178,17 +178,9 @@ app.get("/uploads/:name", (c) => {
   });
 });
 
-// 发送一条消息，回复用 SSE 流式返回
-app.post("/api/thread/chat", async (c) => {
-  const conv = thread();
-  const body = await c.req.json<{ content?: string; images?: string[] }>();
-  const userText = String(body.content ?? "").trim();
-  const images = (body.images ?? []).filter((n) => isImageName(n) && readImage(n)).slice(0, 4);
-  if (!userText && !images.length) return c.json({ error: "empty message" }, 400);
+// 生成回复并用 SSE 流式返回（发送消息和重新生成共用）
+function replyStream(c: Context, conv: db.Conversation, restoreOnFail?: ReturnType<typeof db.takeMessage>) {
   const model = findModel(conv.model) ?? MODELS[0];
-
-  db.addMessage(conv.id, "user", userText, images);
-
   return streamSSE(c, async (sse) => {
     const abort = new AbortController();
     sse.onAbort(() => abort.abort());
@@ -222,9 +214,30 @@ app.post("/api/thread/chat", async (c) => {
     // 去掉模型自己写的「系统记录」（防伪造），真实的工具调用由代码另外记下
     text = stripToolMarks(text);
     if (text) db.addMessage(conv.id, "assistant", text, [], null, toolsUsed);
+    else if (restoreOnFail) db.restoreMessage(restoreOnFail); // 重新生成失败：把原来那条放回去
     await sse.writeSSE({ event: "done", data: "{}" });
     void maybeSummarize(conv.id);
   });
+}
+
+// 发送一条消息，回复用 SSE 流式返回
+app.post("/api/thread/chat", async (c) => {
+  const conv = thread();
+  const body = await c.req.json<{ content?: string; images?: string[] }>();
+  const userText = String(body.content ?? "").trim();
+  const images = (body.images ?? []).filter((n) => isImageName(n) && readImage(n)).slice(0, 4);
+  if (!userText && !images.length) return c.json({ error: "empty message" }, 400);
+
+  db.addMessage(conv.id, "user", userText, images);
+  return replyStream(c, conv);
+});
+
+// 重新生成最后一条回复：删掉它，用同样的历史再答一次
+app.post("/api/thread/regenerate", (c) => {
+  const conv = thread();
+  const id = db.regenerableTail(conv.id);
+  if (id === null) return c.json({ error: "这条不能重新生成" }, 400);
+  return replyStream(c, conv, db.takeMessage(id));
 });
 
 app.use("*", serveStatic({ root: "public" }));

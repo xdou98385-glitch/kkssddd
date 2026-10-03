@@ -106,7 +106,9 @@ function renderBatch(msgs) {
     const k = dayKey(m.created_at);
     if (k !== day) { nodes.push(dayDivider(k)); day = k; }
     if (m.role === "assistant") for (const t of m.tools || []) nodes.push(toolNote(TOOL_LABELS[t] || t));
-    nodes.push(bubble(m.role, m.content, m.images, m.created_at).wrap);
+    const b = bubble(m.role, m.content, m.images, m.created_at);
+    if (m.kind) b.wrap.dataset.kind = m.kind;
+    nodes.push(b.wrap);
   }
   return { nodes, lastDay: day };
 }
@@ -137,6 +139,7 @@ async function loadThread() {
   state.lastId = data.messages.at(-1).id;
   state.lastDay = lastDay;
   scrollDown(true);
+  if (!state.busy) markRegen();
 }
 
 async function loadEarlier() {
@@ -243,6 +246,13 @@ async function send(text, images) {
   const mine = bubble("user", text, images, sentAt);
   mine.wrap.classList.add("enter");
   els.messages.append(mine.wrap);
+  await runReply("/api/thread/chat", { content: text, images });
+}
+
+// 流式接收一条回复（发送和重新生成共用）
+async function runReply(url, payload) {
+  clearRegen();
+  els.messages.querySelector(".empty")?.remove();
   const reply = bubble("assistant", "");
   reply.wrap.classList.add("enter");
   reply.b.classList.add("cursor");
@@ -254,10 +264,10 @@ async function send(text, images) {
   let failed = "";
   state.abort = new AbortController();
   try {
-    const res = await fetch("/api/thread/chat", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: text, images }),
+      body: JSON.stringify(payload),
       signal: state.abort.signal,
     });
     if (res.status === 401) { location.href = "/login"; return; }
@@ -291,6 +301,49 @@ async function send(text, images) {
     if (game.open) gameLoad();
     // 这是第一条消息：重新加载一次，拿到数据库里的 id 才能往前翻页
     if (!failed) await syncIds();
+    markRegen();
+  }
+  return failed;
+}
+
+// ---- 重新生成最后一条回复 ----
+function clearRegen() {
+  els.messages.querySelectorAll(".regen").forEach((b) => b.remove());
+}
+
+// 只有最后一条是「正常的助手回复」时才给按钮；主动消息、报错气泡都不给
+function markRegen() {
+  clearRegen();
+  const last = els.messages.lastElementChild;
+  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || last.dataset.kind === "proactive") return;
+  if (last.querySelector(".bubble.err")) return;
+  let prev = last.previousElementSibling;
+  while (prev?.classList.contains("tool")) prev = prev.previousElementSibling;
+  if (!prev?.classList.contains("user")) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "regen";
+  btn.textContent = "重新生成";
+  btn.onclick = regenerate;
+  last.append(btn);
+}
+
+async function regenerate() {
+  if (state.busy) return;
+  const last = els.messages.lastElementChild;
+  if (!last?.classList.contains("msg")) return;
+  // 连同它上面的工具小字一起去掉
+  while (last.previousElementSibling?.classList.contains("tool")) last.previousElementSibling.remove();
+  last.remove();
+  const failed = await runReply("/api/thread/regenerate", {});
+  if (failed) {
+    // 失败了：服务器已把原来那条放回去，重新加载出来，再把报错放在下面
+    await refreshThread(true);
+    const e = bubble("assistant", "");
+    e.b.classList.add("err");
+    e.b.textContent = failed;
+    els.messages.append(e.wrap);
+    scrollDown();
   }
 }
 
@@ -522,6 +575,7 @@ async function refreshThread(force = false) {
   state.hasMore = d.hasMore;
   state.lastDay = lastDay;
   scrollDown(true);
+  if (!state.busy) markRegen();
 }
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshThread();

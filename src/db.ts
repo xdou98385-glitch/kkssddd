@@ -64,6 +64,7 @@ export interface Message {
   content: string;
   images: string[];
   tools: string[];
+  kind: string | null; // 'proactive' = 主动消息
   created_at: number;
 }
 
@@ -73,6 +74,7 @@ interface MessageRow {
   content: string;
   images: string | null;
   tools: string | null;
+  kind: string | null;
   created_at: number;
 }
 const toMessage = (r: MessageRow): Message => ({
@@ -81,6 +83,7 @@ const toMessage = (r: MessageRow): Message => ({
   content: r.content,
   images: r.images ? JSON.parse(r.images) : [],
   tools: r.tools ? JSON.parse(r.tools) : [],
+  kind: r.kind,
   created_at: r.created_at,
 });
 
@@ -128,7 +131,7 @@ export function messagePage(
 ): { messages: Message[]; hasMore: boolean } {
   const rows = db
     .prepare(
-      `SELECT id, role, content, images, tools, created_at FROM messages
+      `SELECT id, role, content, images, tools, kind, created_at FROM messages
        WHERE conversation_id = ? AND id < ? ORDER BY id DESC LIMIT ?`,
     )
     .all(conversationId, before ?? Number.MAX_SAFE_INTEGER, limit + 1) as unknown as MessageRow[];
@@ -141,7 +144,7 @@ export function windowMessages(conversationId: string, afterId: number): Message
   return (
     db
       .prepare(
-        `SELECT id, role, content, images, tools, created_at FROM messages
+        `SELECT id, role, content, images, tools, kind, created_at FROM messages
          WHERE conversation_id = ? AND id > ? ORDER BY id`,
       )
       .all(conversationId, afterId) as unknown as MessageRow[]
@@ -177,6 +180,40 @@ export function lastMessage(
   return db
     .prepare("SELECT role, kind, created_at FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1")
     .get(conversationId) as { role: "user" | "assistant"; kind: string | null; created_at: number } | undefined;
+}
+
+/** 可以重新生成的末尾回复：最后一条是她正常对话里的助手回复，且前一条是她说的话。返回它的 id */
+export function regenerableTail(conversationId: string): number | null {
+  const rows = db
+    .prepare("SELECT id, role, kind FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 2")
+    .all(conversationId) as { id: number; role: string; kind: string | null }[];
+  const [last, prev] = rows;
+  return last && prev && last.role === "assistant" && last.kind === null && prev.role === "user" ? last.id : null;
+}
+
+interface RawMessage {
+  conversation_id: string;
+  role: string;
+  content: string;
+  images: string | null;
+  kind: string | null;
+  tools: string | null;
+  created_at: number;
+}
+
+/** 删掉一条消息并返回原样，重新生成失败时用 restoreMessage 放回去 */
+export function takeMessage(id: number): RawMessage | undefined {
+  const row = db
+    .prepare("SELECT conversation_id, role, content, images, kind, tools, created_at FROM messages WHERE id = ?")
+    .get(id) as RawMessage | undefined;
+  if (row) db.prepare("DELETE FROM messages WHERE id = ?").run(id);
+  return row;
+}
+
+export function restoreMessage(m: RawMessage): void {
+  db.prepare(
+    "INSERT INTO messages (conversation_id, role, content, images, kind, tools, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(m.conversation_id, m.role, m.content, m.images, m.kind, m.tools, m.created_at);
 }
 
 export function proactiveStats(conversationId: string, since: number): { count: number; lastAt: number } {
