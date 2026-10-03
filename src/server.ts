@@ -16,6 +16,7 @@ import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
+import { TtsError, speakable, synthesize, ttsEnabled } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
@@ -145,6 +146,7 @@ app.get("/api/thread", (c) => {
   const limit = Math.min(Number(c.req.query("limit")) || 40, 100);
   return c.json({
     conversation: { id: conv.id, model: conv.model },
+    tts: ttsEnabled,
     ...db.messagePage(conv.id, before, limit),
   });
 });
@@ -213,9 +215,10 @@ function replyStream(c: Context, conv: db.Conversation, restoreOnFail?: ReturnTy
     }
     // 去掉模型自己写的「系统记录」（防伪造），真实的工具调用由代码另外记下
     text = stripToolMarks(text);
-    if (text) db.addMessage(conv.id, "assistant", text, [], null, toolsUsed);
+    let id: number | null = null;
+    if (text) id = db.addMessage(conv.id, "assistant", text, [], null, toolsUsed);
     else if (restoreOnFail) db.restoreMessage(restoreOnFail); // 重新生成失败：把原来那条放回去
-    await sse.writeSSE({ event: "done", data: "{}" });
+    await sse.writeSSE({ event: "done", data: JSON.stringify({ id }) });
     void maybeSummarize(conv.id);
   });
 }
@@ -240,6 +243,31 @@ app.post("/api/thread/regenerate", (c) => {
   return replyStream(c, conv, db.takeMessage(id));
 });
 
+// 把一条助手消息念出来。用 GET + 支持 Range，iPhone 的 <audio> 才肯播
+app.get("/api/tts/:id", async (c) => {
+  if (!ttsEnabled) return c.json({ error: "还没配置语音" }, 404);
+  const content = db.assistantText(Number(c.req.param("id")));
+  const text = content ? speakable(content) : "";
+  if (!text) return c.json({ error: "这条没有可念的内容" }, 400);
+  let audio: Buffer;
+  try {
+    audio = await synthesize(text);
+  } catch (err) {
+    if (!(err instanceof TtsError)) console.error("tts:", err);
+    return c.json({ error: err instanceof TtsError ? err.message : "语音生成失败" }, err instanceof TtsError ? 429 : 502);
+  }
+  const size = audio.length;
+  const headers = { "Content-Type": "audio/mpeg", "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=31536000" };
+  const m = /^bytes=(\d*)-(\d*)$/.exec(c.req.header("range") ?? "");
+  if (m && (m[1] || m[2])) {
+    const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+    const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+    if (start >= size || start > end) return c.body(null, 416, { "Content-Range": `bytes */${size}` });
+    return c.body(new Uint8Array(audio.subarray(start, end + 1)), 206, { ...headers, "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(end - start + 1) });
+  }
+  return c.body(new Uint8Array(audio), 200, { ...headers, "Content-Length": String(size) });
+});
+
 app.use("*", serveStatic({ root: "public" }));
 
 const port = Number(process.env.PORT ?? 3000);
@@ -247,6 +275,7 @@ const server = serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.
   console.log(`listening on http://localhost:${port}`);
   startScheduler();
   console.log(`device events: ${deviceEnabled ? "ON" : "OFF (DEVICE_TOKEN not set)"}`);
+  console.log(`tts: ${ttsEnabled ? "ON (ElevenLabs)" : "OFF (ELEVENLABS_API_KEY / ELEVENLABS_VOICE_ID not set)"}`);
   const s = await memosStatus();
   console.log(
     !s.enabled

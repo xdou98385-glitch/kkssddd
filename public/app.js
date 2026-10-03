@@ -6,7 +6,7 @@ const els = {
 };
 
 const MAX_IMAGES = 4;
-const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null };
+const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null, tts: false };
 
 async function api(path, opts = {}) {
   const res = await fetch("/api" + path, {
@@ -108,6 +108,7 @@ function renderBatch(msgs) {
     if (m.role === "assistant") for (const t of m.tools || []) nodes.push(toolNote(TOOL_LABELS[t] || t));
     const b = bubble(m.role, m.content, m.images, m.created_at);
     if (m.kind) b.wrap.dataset.kind = m.kind;
+    if (m.role === "assistant") { b.wrap.dataset.id = m.id; addSpeak(b.wrap); }
     nodes.push(b.wrap);
   }
   return { nodes, lastDay: day };
@@ -130,6 +131,7 @@ async function loadThread() {
     els.messages.querySelector("button").onclick = loadThread;
     return;
   }
+  state.tts = Boolean(data.tts);
   els.model.value = data.conversation.model;
   state.hasMore = data.hasMore;
   if (!data.messages.length) return showEmpty();
@@ -262,6 +264,7 @@ async function runReply(url, payload) {
   setBusy(true);
   let acc = "";
   let failed = "";
+  let doneId = null;
   state.abort = new AbortController();
   try {
     const res = await fetch(url, {
@@ -282,14 +285,17 @@ async function runReply(url, payload) {
         scrollDown();
       } else if (event === "game") {
         if (game.open) gameLoad();
-      } else if (event === "error") failed = data;
+      } else if (event === "done") doneId = data?.id ?? null;
+      else if (event === "error") failed = data;
     });
   } catch (err) {
     if (err.name !== "AbortError") failed = err.message;
   } finally {
     reply.b.classList.remove("cursor");
-    if (acc) setTime(reply.wrap, Date.now());
-    else reply.wrap.remove();
+    if (acc) {
+      setTime(reply.wrap, Date.now());
+      if (doneId) { reply.wrap.dataset.id = doneId; addSpeak(reply.wrap); }
+    } else reply.wrap.remove();
     if (failed) {
       const e = bubble("assistant", "");
       e.b.classList.add("err");
@@ -304,6 +310,62 @@ async function runReply(url, payload) {
     markRegen();
   }
   return failed;
+}
+
+// ---- 朗读 ----
+const SPEAK_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
+const STOP_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+let speaking = null; // { btn, audio }
+
+function toast(msg) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = msg;
+  document.body.append(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function stopSpeaking() {
+  if (!speaking) return;
+  const { btn, audio } = speaking;
+  speaking = null;
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+  btn.classList.remove("on", "loading");
+  btn.innerHTML = SPEAK_ICON;
+}
+
+function addSpeak(wrap) {
+  if (!state.tts || !wrap.dataset.id || wrap.querySelector(".speak")) return;
+  const time = wrap.querySelector(".time");
+  if (!time) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "speak";
+  btn.title = btn.ariaLabel = "朗读";
+  btn.innerHTML = SPEAK_ICON;
+  btn.onclick = () => {
+    const was = speaking?.btn === btn;
+    stopSpeaking();
+    if (was) return;
+    // 必须在点击里同步 play()，iPhone 才不会拦；音频由浏览器自己请求
+    const audio = new Audio("/api/tts/" + wrap.dataset.id);
+    speaking = { btn, audio };
+    btn.classList.add("on", "loading");
+    audio.addEventListener("playing", () => { btn.classList.remove("loading"); btn.innerHTML = STOP_ICON; });
+    audio.addEventListener("ended", () => { if (speaking?.audio === audio) stopSpeaking(); });
+    audio.addEventListener("error", async () => {
+      if (speaking?.audio !== audio) return;
+      stopSpeaking();
+      const r = await fetch("/api/tts/" + wrap.dataset.id).catch(() => null);
+      toast((await r?.json().catch(() => null))?.error || "语音播放失败");
+    });
+    audio.play().catch(() => {});
+  };
+  time.append(btn);
 }
 
 // ---- 重新生成最后一条回复 ----
@@ -569,6 +631,7 @@ async function refreshThread(force = false) {
   if (state.busy) return;
   const d = await api("/thread?limit=40").catch(() => null);
   if (!d || !d.messages.length) return;
+  state.tts = Boolean(d.tts);
   if (!force && d.messages.at(-1).id === state.lastId) return;
   const { nodes, lastDay } = renderBatch(d.messages);
   els.messages.replaceChildren(...nodes);

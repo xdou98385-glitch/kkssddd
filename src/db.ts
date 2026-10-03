@@ -158,8 +158,8 @@ export function addMessage(
   images: string[] = [],
   kind: "proactive" | null = null,
   tools: string[] = [],
-): void {
-  db.prepare(
+): number {
+  const r = db.prepare(
     "INSERT INTO messages (conversation_id, role, content, images, kind, tools, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ).run(
     conversationId,
@@ -171,6 +171,13 @@ export function addMessage(
     now(),
   );
   db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now(), conversationId);
+  return Number(r.lastInsertRowid);
+}
+
+/** 一条助手消息的正文（给语音用） */
+export function assistantText(id: number): string | null {
+  const r = db.prepare("SELECT content FROM messages WHERE id = ? AND role = 'assistant'").get(id) as { content: string } | undefined;
+  return r?.content ?? null;
 }
 
 /** 最后一条消息（含是否是主动发的），用来判断要不要再主动开口 */

@@ -103,8 +103,11 @@ header h1 { flex: 1; margin: 0; text-align: center; font: 500 17px/1 var(--serif
 @keyframes blink { 50% { opacity: 0; } }
 
 .msg.assistant .time { display: flex; align-items: center; gap: 10px; }
-.msg .regen { display: inline-flex; padding: 4px; margin: -4px 0; border: 0; background: none; color: var(--muted); opacity: 0.5; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.msg .regen:hover, .msg .regen:active { opacity: 1; color: var(--text); }
+.msg .regen, .msg .speak { display: inline-flex; padding: 4px; margin: -4px 0; border: 0; background: none; color: var(--muted); opacity: 0.5; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.msg .regen:hover, .msg .regen:active, .msg .speak:hover, .msg .speak:active, .msg .speak.on { opacity: 1; color: var(--text); }
+.msg .speak.loading { animation: speak-pulse 1s ease-in-out infinite; }
+@keyframes speak-pulse { 50% { opacity: 0.3; } }
+.toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); max-width: 80vw; padding: 10px 16px; border-radius: 14px; background: var(--text); color: var(--bg, #fff); font: 400 13px/1.4 var(--sans); z-index: 50; }
 .time { margin-top: 6px; font: 400 11px/1 var(--sans); letter-spacing: 0.08em; color: var(--muted); font-variant-numeric: tabular-nums; }
 .day { display: flex; align-items: center; gap: 14px; margin: 6px 0 24px; color: var(--muted); font: 400 11px/1 var(--sans); letter-spacing: 0.22em; font-variant-numeric: tabular-nums; }
 .day::before, .day::after { content: ""; flex: 1; border-top: 1px solid var(--hairline); }
