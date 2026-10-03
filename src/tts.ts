@@ -23,7 +23,7 @@ const voiceSettings = {
   style: num(process.env.TTS_STYLE, 0.3, 0, 1),
 };
 const callMe = process.env.TTS_CALL_ME || "Kay"; // 英文里怎么称呼她
-const PROMPT_VERSION = "v2"; // 改了翻译提示词就加一，旧译文缓存自动作废
+const PROMPT_VERSION = "v3"; // 改了翻译提示词就加一，旧译文缓存自动作废
 
 export const ttsEnabled = Boolean(key && voice);
 
