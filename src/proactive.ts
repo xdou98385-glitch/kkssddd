@@ -130,7 +130,9 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
     // 只取最后一轮的文字：调用工具之前说的话不算
     const text = result.finalText.trim();
     if (!text || /^\[skip\]/i.test(text) || result.stopReason === "refusal") return skip("Claude 觉得现在不用发");
-    db.addMessage(conv.id, "assistant", stripToolMarks(text), [], "proactive", result.toolsUsed);
+    // 心跳指令里附带了手机动态（由代码取的真实数据），记成用过 device_activity，否则之后会被当成"没查就说"
+    const sources = deviceEnabled && !result.toolsUsed.includes("device_activity") ? [...result.toolsUsed, "device_activity"] : result.toolsUsed;
+    db.addMessage(conv.id, "assistant", stripToolMarks(text), [], "proactive", sources);
     const push = await sendPush({ title: "Claude", body: preview(text), url: "/" });
     return { status: "sent", text, pushed: push.sent, pushErrors: push.errors };
   } catch (err) {

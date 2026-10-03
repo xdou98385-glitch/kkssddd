@@ -323,9 +323,11 @@ function markRegen() {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "regen";
-  btn.textContent = "重新生成";
+  btn.title = btn.ariaLabel = "重新生成";
+  btn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
   btn.onclick = regenerate;
-  last.append(btn);
+  (last.querySelector(".time") ?? last).append(btn);
 }
 
 async function regenerate() {
