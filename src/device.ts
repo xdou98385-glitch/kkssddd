@@ -17,8 +17,10 @@ export function checkDeviceToken(header: string | undefined): boolean {
   return header?.startsWith("Bearer ") ? checkRawToken(header.slice(7)) : false;
 }
 
-/** 她的时区（由浏览器在保存设置时上报），没有就用 UTC */
+/** 她的时区：聊天时由浏览器上报；没有就用主动消息设置里的，再没有用 UTC */
 export function userTz(): string {
+  const saved = db.getSetting("tz");
+  if (saved) return saved;
   try {
     return JSON.parse(db.getSetting("proactive") || "{}").tz || "UTC";
   } catch {

@@ -75,6 +75,7 @@ const TOOL_LABELS = {
   sudoku_place: "落了子",
   weread: "查了微信读书",
   device_activity: "看了眼她手机最近在干嘛",
+  get_time: "看了眼时间",
 };
 
 function dayDivider(key) {

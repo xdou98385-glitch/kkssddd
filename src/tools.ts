@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
 import { activitySummary, deviceEnabled, userTz } from "./device.ts";
+import * as db from "./db.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
 
 export interface Tool {
@@ -168,7 +169,28 @@ const deviceTool: Tool = {
   label: () => "看了眼她手机最近在干嘛",
 };
 
+// ---- 时钟：此刻的准确时间 ----
+const clockTool: Tool = {
+  def: {
+    name: "get_time",
+    description:
+      "查看此刻的准确日期和时间（她的本地时间）。她每条消息开头已经带了发送时间，一般不用调；需要精确到现在、或想算距离她上次发言过了多久时才用。",
+    strict: true,
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async () => {
+    const now = Date.now();
+    const tz = userTz();
+    const text = new Intl.DateTimeFormat("zh-CN", { timeZone: tz, dateStyle: "full", timeStyle: "medium", hourCycle: "h23" }).format(now);
+    const last = db.latestMessage();
+    const gap = last?.role === "user" ? `；她最后一条消息是 ${Math.round((now - last.created_at) / 60_000)} 分钟前发的` : "";
+    return `现在是 ${text}（${tz}）${gap}`;
+  },
+  label: () => "看了眼时间",
+};
+
 export const tools: Tool[] = [
+  clockTool,
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),
   ...(wereadEnabled ? [wereadTool] : []),

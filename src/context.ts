@@ -6,7 +6,7 @@ import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, 
 import { coreMemoryBlock } from "./tools.ts";
 import { memosEnabled } from "./memos.ts";
 import { wereadEnabled } from "./weread.ts";
-import { deviceEnabled } from "./device.ts";
+import { deviceEnabled, userTz } from "./device.ts";
 
 /** 系统提示词：人设 + 各功能的使用说明 + 核心记忆 + 更早对话的摘要。聊天和主动消息共用。 */
 export async function buildSystem(conv: db.Conversation): Promise<string> {
@@ -41,13 +41,6 @@ export const stripToolMarks = (text: string) =>
     .replace(/\[系统记录[^\]]*\]/g, "")
     .replace(/^\s*\[\d{1,2}月\d{1,2}日[^\]]*\]\s*/, "") // 模仿用户消息前的时间戳
     .trim();
-
-/** 她所在的时区：聊天时由浏览器上报；没有就用主动消息设置里的，再没有用 UTC */
-function userTz(): string {
-  const saved = db.getSetting("tz");
-  if (saved) return saved;
-  try { return JSON.parse(db.getSetting("proactive") || "{}").tz || "UTC"; } catch { return "UTC"; }
-}
 
 /** 每条她发的消息前面加本地时间，模型才知道"现在"几点、两条消息隔了多久。由消息时间算出，同一条永远一样，不破坏提示词缓存 */
 function stamp(ms: number, tz: string): string {

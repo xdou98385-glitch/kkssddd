@@ -223,6 +223,13 @@ export function restoreMessage(m: RawMessage): void {
   ).run(m.conversation_id, m.role, m.content, m.images, m.kind, m.tools, m.created_at);
 }
 
+/** 整个库里最新的一条消息（不分对话；只有一条主对话） */
+export function latestMessage(): { role: "user" | "assistant"; created_at: number } | undefined {
+  return db.prepare("SELECT role, created_at FROM messages ORDER BY id DESC LIMIT 1").get() as
+    | { role: "user" | "assistant"; created_at: number }
+    | undefined;
+}
+
 export function proactiveStats(conversationId: string, since: number): { count: number; lastAt: number } {
   const r = db
     .prepare(
