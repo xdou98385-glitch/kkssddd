@@ -36,12 +36,35 @@ type Content = Anthropic.Beta.BetaMessageParam["content"];
 /** 助手的回复后面附上系统记录的真实工具调用，让它在回看历史时分得清哪些说法有依据 */
 export const TOOL_MARK = (tools: string[]) => `[系统记录：这条回复调用了工具 ${tools.join("、")}]`;
 /** 模型自己写出来的这种记录一律去掉，防止伪造 */
-export const stripToolMarks = (text: string) => text.replace(/\[系统记录[^\]]*\]/g, "").trim();
+export const stripToolMarks = (text: string) =>
+  text
+    .replace(/\[系统记录[^\]]*\]/g, "")
+    .replace(/^\s*\[\d{1,2}月\d{1,2}日[^\]]*\]\s*/, "") // 模仿用户消息前的时间戳
+    .trim();
 
-function toParam(m: db.Message, withImages: boolean): Anthropic.Beta.BetaMessageParam {
+/** 她所在的时区：聊天时由浏览器上报；没有就用主动消息设置里的，再没有用 UTC */
+function userTz(): string {
+  const saved = db.getSetting("tz");
+  if (saved) return saved;
+  try { return JSON.parse(db.getSetting("proactive") || "{}").tz || "UTC"; } catch { return "UTC"; }
+}
+
+/** 每条她发的消息前面加本地时间，模型才知道"现在"几点、两条消息隔了多久。由消息时间算出，同一条永远一样，不破坏提示词缓存 */
+function stamp(ms: number, tz: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("zh-CN", { timeZone: tz, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(ms);
+    const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+    return `[${get("month")}月${get("day")}日 ${get("weekday")} ${get("hour")}:${get("minute")}]`;
+  } catch {
+    return "";
+  }
+}
+
+function toParam(m: db.Message, withImages: boolean, tz: string): Anthropic.Beta.BetaMessageParam {
+  const when = m.role === "user" ? stamp(m.created_at, tz) : "";
   if (!m.images.length) {
     const marked = m.role === "assistant" && m.tools.length ? `${m.content}\n\n${TOOL_MARK(m.tools)}` : m.content;
-    return { role: m.role, content: marked };
+    return { role: m.role, content: when ? `${when} ${marked}` : marked };
   }
   const blocks: Exclude<Content, string> = [];
   if (withImages) {
@@ -55,7 +78,7 @@ function toParam(m: db.Message, withImages: boolean): Anthropic.Beta.BetaMessage
     }
   }
   const note = withImages ? "" : `[${m.images.length} 张图片，已省略] `;
-  const text = note + m.content;
+  const text = (when ? when + " " : "") + note + m.content;
   if (text.trim()) blocks.push({ type: "text", text });
   return { role: m.role, content: blocks.length ? blocks : "[图片]" };
 }
@@ -64,7 +87,8 @@ export function buildHistory(conv: db.Conversation): Anthropic.Beta.BetaMessageP
   const win = db.windowMessages(conv.id, conv.summarized_upto);
   const firstUser = win.findIndex((m) => m.role === "user");
   const usable = firstUser < 0 ? [] : win.slice(firstUser); // API 要求第一条是 user
-  return usable.map((m, i) => toParam(m, i >= usable.length - IMAGE_RECENT));
+  const tz = userTz();
+  return usable.map((m, i) => toParam(m, i >= usable.length - IMAGE_RECENT, tz));
 }
 
 const running = new Set<string>();
@@ -85,8 +109,9 @@ export async function maybeSummarize(convId: string): Promise<void> {
 
   running.add(convId);
   try {
+    const tz = userTz();
     const transcript = old
-      .map((m) => `${m.role === "user" ? "她" : "你"}：${m.images.length ? "[图片] " : ""}${m.content}`)
+      .map((m) => `${m.role === "user" ? `${stamp(m.created_at, tz)} 她` : "你"}：${m.images.length ? "[图片] " : ""}${m.content}`)
       .join("\n");
     const summary = await summarize(conv.summary, transcript);
     if (summary) db.setSummary(conv.id, summary, old.at(-1)!.id);

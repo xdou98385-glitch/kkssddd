@@ -226,7 +226,11 @@ function replyStream(c: Context, conv: db.Conversation, restoreOnFail?: ReturnTy
 // 发送一条消息，回复用 SSE 流式返回
 app.post("/api/thread/chat", async (c) => {
   const conv = thread();
-  const body = await c.req.json<{ content?: string; images?: string[] }>();
+  const body = await c.req.json<{ content?: string; images?: string[]; tz?: string }>();
+  // 浏览器上报的时区：用来给她的每条消息标上本地时间
+  if (body.tz && body.tz !== db.getSetting("tz")) {
+    try { new Intl.DateTimeFormat("en", { timeZone: body.tz }); db.setSetting("tz", body.tz); } catch { /* 时区不对就忽略 */ }
+  }
   const userText = String(body.content ?? "").trim();
   const images = (body.images ?? []).filter((n) => isImageName(n) && readImage(n)).slice(0, 4);
   if (!userText && !images.length) return c.json({ error: "empty message" }, 400);

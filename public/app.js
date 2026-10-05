@@ -248,7 +248,7 @@ async function send(text, images) {
   const mine = bubble("user", text, images, sentAt);
   mine.wrap.classList.add("enter");
   els.messages.append(mine.wrap);
-  await runReply("/api/thread/chat", { content: text, images });
+  await runReply("/api/thread/chat", { content: text, images, tz: timeZone() });
 }
 
 // 流式接收一条回复（发送和重新生成共用）
