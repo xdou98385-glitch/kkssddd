@@ -53,6 +53,8 @@ ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_
 - 语音：每条助手消息时间旁有喇叭按钮，点了才生成（不自动念）。她的 ElevenLabs 声音是英文的（中文她觉得尬），所以点喇叭时先用 Sonnet(低 effort) 把回复翻成英语再念（`speechText`，译文和音频都按文本缓存，TTS_TRANSLATE_TO=none 关掉）；聊天文字仍是中文。接下来她想要：①模仿通话 ②微播客（Claude 写短稿再念，复用 tts.ts）；通话需要语音识别，iPhone PWA 里最脆弱，放最后。
 - **聊天记录曾每次更新都丢**：她服务器 `.env` 里有 `DB_PATH=data/chat.db`（是照着旧的 `.env.example` 抄的，现已改成注释），盖掉了 Dockerfile 的 `/data/chat.db`，库落在容器内部。已在 docker-compose.yml 的 environment 里写死 `DB_PATH: /data/chat.db`（environment 优先于 env_file），并帮她把当时的库拷到了 `./data/`。之后 `./data/chat.db` 应当持续存在。
 
+- **手机突然 TLS 打不开（"couldn't establish a secure connection"）**：服务器、容器、Funnel 都正常时，是她手机到 `ts.net` 公网入口这一段不通；在手机上装着并连上 Tailscale（VPN 开）就好，删掉 app 后就坏。结论：她的手机需要保持 Tailscale 开着，快捷指令也一样。想彻底摆脱，换一个不依赖 ts.net 的入口（自己的域名 + Caddy 直接放在 Vultr 公网 IP 上，或 Cloudflare Tunnel）。
+
 ## 待办 / 她提过的想法
 - 确认她已轮换 DEVICE_TOKEN（charging_off 快捷指令她已补）。
 - 观察主动消息的花销和分寸（太贵调大 PROACTIVE_EVERY_MIN，太频繁调每天上限）。
