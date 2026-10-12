@@ -67,6 +67,15 @@
         <textarea id="system-prompt" rows="9"></textarea>
         <small>每次对话都会带上，决定它怎么说话、怎么称呼你。</small>
       </label>
+      <label class="field"><span>记忆窗口</span>
+        <select id="window-preset">
+          <option value="tight">紧凑：最省额度</option>
+          <option value="balanced">均衡（推荐）</option>
+          <option value="wide">宽松：多记原话</option>
+          <option value="long">很长：最费额度</option>
+        </select>
+        <small>聊太长时，旧内容会自动压成摘要带到下一段，等于无缝换窗。窗口越小越省，原话记得越少，重要的事靠摘要和记忆。</small>
+      </label>
       <fieldset class="group">
         <legend>主动消息</legend>
         <label class="switch"><input type="checkbox" id="pro-on"><span>允许它主动找我（发消息并推送到手机）</span></label>
