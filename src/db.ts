@@ -43,7 +43,7 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
 `);
-ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的
+ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的；'podcast' = 她点「来一期」生成的微播客
 ensureColumn("messages", "tools", "TEXT"); // JSON 数组：这条回复真正调用过的工具名（系统记录，不是模型自己说的）
 ensureColumn("messages", "images", "TEXT"); // JSON 数组：上传图片的文件名
 ensureColumn("conversations", "summary", "TEXT NOT NULL DEFAULT ''"); // 更早对话的摘要
@@ -156,7 +156,7 @@ export function addMessage(
   role: Message["role"],
   content: string,
   images: string[] = [],
-  kind: "proactive" | null = null,
+  kind: "proactive" | "podcast" | null = null,
   tools: string[] = [],
 ): number {
   const r = db.prepare(

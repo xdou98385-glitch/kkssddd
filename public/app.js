@@ -133,6 +133,7 @@ async function loadThread() {
     return;
   }
   state.tts = Boolean(data.tts);
+  $("podcast-box").hidden = !state.tts;
   els.model.value = data.conversation.model;
   state.hasMore = data.hasMore;
   if (!data.messages.length) return showEmpty();
@@ -364,7 +365,11 @@ function addSpeak(wrap) {
       const r = await fetch("/api/tts/" + wrap.dataset.id).catch(() => null);
       toast((await r?.json().catch(() => null))?.error || "语音播放失败");
     });
-    audio.play().catch(() => {});
+    audio.play().catch((e) => {
+      if (speaking?.audio !== audio) return;
+      stopSpeaking();
+      if (e?.name === "NotAllowedError") toast("点一下喇叭就能听");
+    });
   };
   time.append(btn);
 }
@@ -378,7 +383,7 @@ function clearRegen() {
 function markRegen() {
   clearRegen();
   const last = els.messages.lastElementChild;
-  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || last.dataset.kind === "proactive") return;
+  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || ["proactive", "podcast"].includes(last.dataset.kind)) return;
   if (last.querySelector(".bubble.err")) return;
   let prev = last.previousElementSibling;
   while (prev?.classList.contains("tool")) prev = prev.previousElementSibling;
@@ -618,6 +623,21 @@ $("pro-run").onclick = async () => {
       await refreshThread(true);
     } else setStatus("push-status", "这次没发：" + r.reason, true);
   } catch (err) { setStatus("push-status", "失败：" + err.message, true); }
+  btn.disabled = false;
+};
+
+$("pod-run").onclick = async () => {
+  const btn = $("pod-run");
+  btn.disabled = true;
+  setStatus("pod-status", "写稿中，大概十几秒…");
+  try {
+    const r = await api("/podcast", { method: "POST", body: { topic: $("pod-topic").value.trim() } });
+    setStatus("pod-status", "");
+    els.settings.close("cancel");
+    await refreshThread(true);
+    // 尽量直接播；iPhone 如果拦了，会提示点一下喇叭
+    document.querySelector(`.msg[data-id="${r.id}"] .speak`)?.click();
+  } catch (err) { setStatus("pod-status", "失败：" + err.message, true); }
   btn.disabled = false;
 };
 

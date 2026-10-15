@@ -16,6 +16,7 @@ import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
+import { makePodcast } from "./podcast.ts";
 import { TtsError, speechText, synthesize, ttsEnabled } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
@@ -245,6 +246,14 @@ app.post("/api/thread/regenerate", (c) => {
   const id = db.regenerableTail(conv.id);
   if (id === null) return c.json({ error: "这条不能重新生成" }, 400);
   return replyStream(c, conv, db.takeMessage(id));
+});
+
+// 微播客：写一段独白存进聊天，返回消息 id，前端再去朗读
+app.post("/api/podcast", async (c) => {
+  if (!ttsEnabled) return c.json({ error: "还没配置语音" }, 400);
+  const body = await c.req.json<{ topic?: string }>().catch(() => ({}) as { topic?: string });
+  const r = await makePodcast(String(body.topic ?? ""));
+  return "error" in r ? c.json(r, 500) : c.json(r);
 });
 
 // 把一条助手消息念出来。用 GET + 支持 Range，iPhone 的 <audio> 才肯播
