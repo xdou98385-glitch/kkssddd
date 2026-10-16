@@ -58,6 +58,8 @@ ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_
 
 - **界面方向**：她要「千禧年、偏安静」，讨厌可爱风和手机桌面套手机；不要 GeoCities 式的吵。做法：结构先行（底部标签 + 整页），皮肤在现有单色磨砂玻璃上加克制的千禧年细节（凹陷按下的标签、LCD 式等宽读数 + 分段进度条、细斜面）。后续想做通话页（黑屏月相）、也可继续把千禧年味铺到更多地方。
 
+- **仓库目前是公开的**（她说以后再处理，也可能想开源赚点外快）。历史里没扫到密钥。真要公开/开源前要处理：CLAUDE.md 里她的 ts.net 地址和个人称呼、persona.ts 里她的默认人设、README 和仓库描述；或者先改成私有。
+
 ## 待办 / 她提过的想法
 - 确认她已轮换 DEVICE_TOKEN（charging_off 快捷指令她已补）。
 - 观察主动消息的花销和分寸（太贵调大 PROACTIVE_EVERY_MIN，太频繁调每天上限）。
