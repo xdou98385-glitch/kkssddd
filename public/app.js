@@ -6,7 +6,7 @@ const els = {
 };
 
 const MAX_IMAGES = 4;
-const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null, tts: false };
+const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null, tts: false, call: false };
 
 async function api(path, opts = {}) {
   const res = await fetch("/api" + path, {
@@ -134,6 +134,8 @@ async function loadThread() {
   }
   state.tts = Boolean(data.tts);
   $("tab-radio").hidden = !state.tts;
+  $("tab-call").hidden = !data.call;
+  state.call = Boolean(data.call);
   if (location.hash === "#radio") setPage("radio");
   els.model.value = data.conversation.model;
   state.hasMore = data.hasMore;
@@ -391,7 +393,7 @@ function clearRegen() {
 function markRegen() {
   clearRegen();
   const last = els.messages.lastElementChild;
-  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || ["proactive", "podcast"].includes(last.dataset.kind)) return;
+  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || ["proactive", "podcast", "call"].includes(last.dataset.kind)) return;
   if (last.querySelector(".bubble.err")) return;
   let prev = last.previousElementSibling;
   while (prev?.classList.contains("tool")) prev = prev.previousElementSibling;
@@ -842,20 +844,189 @@ document.addEventListener("keydown", (e) => {
 })();
 
 // ---- 页面切换：对话 / 电台 / 棋盘 ----
-const PAGES = { chat: "Claude", radio: "电台", board: "棋盘" };
+const PAGES = { chat: "Claude", radio: "电台", call: "通话", board: "棋盘" };
 function setPage(p) {
-  if (!PAGES[p] || (p === "radio" && !state.tts)) p = "chat";
+  if (!PAGES[p] || (p === "radio" && !state.tts) || (p === "call" && !state.call)) p = "chat";
+  if (p !== "call" && call.on) hangUp();
   document.body.dataset.page = p;
   $("title").textContent = PAGES[p];
   document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-current", String(b.dataset.page === p)));
   game.open = p === "board";
   $("game").hidden = !game.open;
   $("radio").hidden = p !== "radio";
+  $("call").hidden = p !== "call";
   if (game.open) gameLoad();
   if (p === "radio") loadEpisodes();
   if (p === "chat") scrollDown(true);
   history.replaceState(null, "", p === "chat" ? location.pathname : "#" + p);
 }
+
+// ---- 通话 ----
+// 流程：接通（点一下，拿麦克风、解锁播放）→ 它先开口 → 听你说（检测到停顿就收尾）→ 上传识别 → 它回 → 播放 → 再听
+const SILENCE_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+const call = { on: false, state: "idle", stream: null, ctx: null, analyser: null, audio: null, rec: null, next: null, token: 0, t0: 0, timer: null, maxMs: 600000, subs: false };
+
+function callSet(state, label) {
+  call.state = state;
+  $("call-state").textContent = label;
+  $("call-moon").dataset.state = state;
+}
+function callNote(text, bad = false) { setStatus("call-note", text, bad); }
+function callSub(you, it) {
+  const el = $("call-subs");
+  el.textContent = [you && "you: " + you, it && "claude: " + it].filter(Boolean).join("\n");
+}
+
+async function callStart() {
+  if (call.on) return;
+  callNote("");
+  call.audio = new Audio(SILENCE_WAV); // 在点击里先放一段静音，iPhone 之后才允许自动播放它的回复
+  await call.audio.play().catch(() => {});
+  try {
+    call.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch {
+    callNote("没拿到麦克风。在 iPhone 设置里允许这个网页用麦克风，再试一次。", true);
+    return;
+  }
+  call.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  call.analyser = call.ctx.createAnalyser();
+  call.analyser.fftSize = 1024;
+  call.ctx.createMediaStreamSource(call.stream).connect(call.analyser);
+  call.on = true;
+  const token = ++call.token;
+  call.t0 = Date.now();
+  call.timer = setInterval(() => {
+    const ms = Date.now() - call.t0;
+    $("call-time").textContent = mmss(ms / 1000);
+    if (ms > call.maxMs) { toast("通话时间到了"); hangUp(); }
+  }, 500);
+  $("call-go").textContent = "挂断";
+  $("call-go").classList.add("live");
+  callSub("", "");
+  // 它先开口
+  await callRound(token, null);
+}
+
+function hangUp() {
+  if (!call.on) return;
+  call.on = false;
+  call.token++;
+  clearInterval(call.timer);
+  try { call.rec?.state === "recording" && call.rec.stop(); } catch { /* 已经停了 */ }
+  call.rec = null;
+  call.audio?.pause();
+  call.stream?.getTracks().forEach((t) => t.stop());
+  call.ctx?.close().catch(() => {});
+  call.stream = call.ctx = call.analyser = null;
+  $("call-go").textContent = "接通";
+  $("call-go").classList.remove("live");
+  callSet("idle", "STANDBY");
+  $("call-moon").style.removeProperty("--lvl");
+  refreshThread(true); // 通话记录会出现在对话里
+}
+
+/** 一轮：blob 为 null 表示刚接通，让它先说话 */
+async function callRound(token, blob, durationMs = 0) {
+  callSet("thinking", "THINKING");
+  let r;
+  try {
+    const res = await fetch("/api/call/turn", {
+      method: "POST",
+      headers: blob ? { "Content-Type": blob.type, "X-Duration-Ms": String(Math.round(durationMs)) } : { "X-Call-Start": "1" },
+      body: blob ?? "",
+    });
+    if (res.status === 401) { location.href = "/login"; return; }
+    r = await res.json();
+    if (!res.ok) throw new Error(r.error || res.statusText);
+  } catch (err) {
+    if (token !== call.token) return;
+    callNote(err.message, true);
+    if (/额度/.test(err.message)) return hangUp();
+    return callListen(token); // 其他错误：提示一下，接着听
+  }
+  if (token !== call.token) return;
+  if (r.maxMinutes) call.maxMs = r.maxMinutes * 60000;
+  if (!r.reply) return callListen(token); // 没听清，接着听
+  callSub(r.heard, r.reply);
+  if (r.audioError) { callNote(r.audioError, true); return callListen(token); }
+  callSet("speaking", "SPEAKING");
+  let done = false;
+  const next = (msg) => {
+    if (done || token !== call.token) return;
+    done = true;
+    if (msg) callNote(msg, true);
+    callListen(token);
+  };
+  call.next = next;
+  call.audio.onended = () => next();
+  call.audio.onerror = () => next("播放失败");
+  call.audio.src = "/api/tts/" + r.id;
+  call.audio.play().catch((e) => {
+    if (e?.name === "NotAllowedError") { callNote("点一下月亮就能听到", true); callSet("speaking", "TAP MOON"); }
+    else next("播放失败");
+  });
+}
+
+/** 听她说话：音量过了阈值算开口；开口之后静音超过一小会儿就收尾 */
+function callListen(token) {
+  if (token !== call.token || !call.on) return;
+  callSet("listening", "LISTENING");
+  const mime = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find((m) => window.MediaRecorder?.isTypeSupported(m));
+  if (!mime) { callNote("这个浏览器不能录音", true); return hangUp(); }
+  const chunks = [];
+  const rec = new MediaRecorder(call.stream, { mimeType: mime });
+  call.rec = rec;
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const buf = new Float32Array(call.analyser.fftSize);
+  const started = Date.now();
+  let base = null, baseN = 0, voiceMs = 0, silenceMs = 0, spoke = false, last = started, spokeAt = 0;
+  let discard = false;
+
+  const tick = () => {
+    if (token !== call.token || rec.state !== "recording") return;
+    call.analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    const rms = Math.sqrt(sum / buf.length);
+    const now = Date.now(), dt = now - last;
+    last = now;
+    $("call-moon").style.setProperty("--lvl", Math.min(1, rms * 12).toFixed(2));
+    if (now - started < 500) { base = ((base ?? 0) * baseN + rms) / (baseN + 1); baseN++; }
+    else {
+      const thr = Math.max(0.015, (base ?? 0) * 2.5);
+      if (rms > thr) { voiceMs += dt; silenceMs = 0; if (voiceMs > 250 && !spoke) { spoke = true; spokeAt = now; } }
+      else if (spoke) silenceMs += dt;
+      if (spoke && silenceMs >= 1100) return rec.stop();
+      if (spoke && now - spokeAt > 25000) return rec.stop(); // 一句话最长 25 秒
+      if (!spoke && now - started > 20000) { discard = true; return rec.stop(); } // 一直没人说话，丢掉这段重新听
+    }
+    requestAnimationFrame(tick);
+  };
+  rec.onstop = () => {
+    if (token !== call.token) return;
+    if (discard || !spoke) return callListen(token);
+    const blob = new Blob(chunks, { type: mime.split(";")[0] });
+    callRound(token, blob, Date.now() - started - silenceMs);
+  };
+  rec.start();
+  requestAnimationFrame(tick);
+}
+
+$("call-go").onclick = () => (call.on ? hangUp() : callStart());
+$("call-moon").onclick = () => {
+  if (!call.on || call.state !== "speaking") return;
+  if (call.audio.paused) { callNote(""); callSet("speaking", "SPEAKING"); call.audio.play().catch(() => call.next?.("播放失败")); return; } // 被拦住的自动播放：点一下补上
+  call.audio.pause(); // 它正在说：点月亮打断它，轮到你
+  call.next?.();
+};
+$("call-sub-toggle").onclick = () => {
+  call.subs = !call.subs;
+  $("call-subs").hidden = !call.subs;
+  $("call-sub-toggle").textContent = "字幕：" + (call.subs ? "开" : "关");
+};
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && call.on) hangUp(); });
+
+// ---- 启动：标签页点击、初始页面（要放在最后，前面的东西都定义好了）----
 document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
 document.body.dataset.page = "chat";
 const startPage = location.hash.slice(1);

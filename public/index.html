@@ -55,6 +55,19 @@
       <ol id="episodes"></ol>
     </section>
 
+    <section id="call" hidden aria-label="通话">
+      <div class="call-top"><span id="call-state">STANDBY</span><span id="call-time">00:00</span></div>
+      <button id="call-moon" class="call-moon" type="button" aria-label="月亮">
+        <img src="/hero.png" alt="" draggable="false">
+      </button>
+      <p id="call-subs" class="call-subs" hidden></p>
+      <div class="call-actions">
+        <button id="call-go" type="button" class="call-go">接通</button>
+        <button id="call-sub-toggle" type="button" class="call-link">字幕：关</button>
+      </div>
+      <p id="call-note" class="memory-status"></p>
+    </section>
+
     <div id="attachments"></div>
     <form id="composer">
       <button id="attach" class="round flat" type="button" aria-label="发图片">
@@ -71,6 +84,7 @@
     <nav id="tabs" aria-label="页面">
       <button type="button" data-page="chat" aria-current="true">对话</button>
       <button type="button" data-page="radio" id="tab-radio" hidden>电台</button>
+      <button type="button" data-page="call" id="tab-call" hidden>通话</button>
       <button type="button" data-page="board">棋盘</button>
     </nav>
   </main>

@@ -61,6 +61,7 @@ const translations = new Map<string, Promise<string>>();
 export async function speechText(raw: string): Promise<string> {
   const text = speakable(raw);
   if (!text || !translateOn) return text;
+  if (!/[\u3400-\u9fff]/.test(text)) return text; // 已经是英文（比如通话里的回复），不用再翻
   const file = join(dir, createHash("sha256").update(`${PROMPT_VERSION}|${target}|${callMe}|${text}`).digest("hex").slice(0, 32) + ".txt");
   if (existsSync(file)) return readFileSync(file, "utf8");
   let job = translations.get(file);

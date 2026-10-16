@@ -17,6 +17,7 @@ import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./d
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { makePodcast } from "./podcast.ts";
+import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
 import { TtsError, speechText, synthesize, ttsEnabled } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
@@ -154,6 +155,7 @@ app.get("/api/thread", (c) => {
   return c.json({
     conversation: { id: conv.id, model: conv.model },
     tts: ttsEnabled,
+    call: callEnabled,
     ...db.messagePage(conv.id, before, limit),
   });
 });
@@ -255,6 +257,22 @@ app.post("/api/thread/regenerate", (c) => {
 });
 
 app.get("/api/podcasts", (c) => c.json({ episodes: db.podcasts(thread().id, 40) }));
+
+// 通话：一轮 = 上传她说的一段录音（或 X-Call-Start 表示刚接通）→ 识别 → Claude 回 → 返回文字，音频走 /api/tts/:id
+app.post("/api/call/turn", bodyLimit({ maxSize: 8 * 1024 * 1024, onError: (c) => c.json({ error: "录音太大" }, 413) }), async (c) => {
+  if (!callEnabled) return c.json({ error: "还没配置语音" }, 400);
+  try {
+    if (c.req.header("x-call-start")) return c.json({ maxMinutes: MAX_CALL_MIN, ...(await callTurn({ hello: true })) });
+    const audio = Buffer.from(await c.req.arrayBuffer());
+    if (audio.length < 800) return c.json({ heard: "" });
+    const heard = await transcribe(audio, c.req.header("content-type") ?? "", Number(c.req.header("x-duration-ms")) || 0);
+    if (heard.replace(/[\s.,!?，。！？…]/g, "").length < 2) return c.json({ heard: "" }); // 噪音或没说清，让前端接着听
+    return c.json(await callTurn({ text: heard }));
+  } catch (err) {
+    if (!(err instanceof CallError)) console.error("call:", err);
+    return c.json({ error: err instanceof CallError ? err.message : "通话出错了" }, err instanceof CallError ? 429 : 502);
+  }
+});
 
 // 微播客：写一段独白存进聊天，返回消息 id，前端再去朗读
 app.post("/api/podcast", async (c) => {

@@ -185,6 +185,7 @@ dialog button.primary { background: var(--ink); color: var(--ink-text); border-c
 
 /* ---- 页面切换 ---- */
 body[data-page="radio"] :is(#messages, #attachments, #composer),
+body[data-page="call"] :is(#messages, #attachments, #composer),
 body[data-page="board"] :is(#messages, #attachments) { display: none; }
 
 /* 底部标签栏：千禧年味的安静版。细斜面、按下去是凹进去的，不用糖果色，也不放图标 */
@@ -218,6 +219,24 @@ body[data-page="board"] :is(#messages, #attachments) { display: none; }
 .ep-play.on { color: var(--text); }
 .ep-play.loading { animation: speak-pulse 1s ease-in-out infinite; }
 .ep-empty { padding: 28px 0; text-align: center; color: var(--muted); font: italic 14px var(--serif); letter-spacing: 0.1em; }
+
+/* ---- 通话：黑屏、月亮、一个按钮 ---- */
+#call { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 8px 20px 20px; min-height: 0; }
+#call[hidden] { display: none; }
+.call-top { align-self: stretch; display: flex; justify-content: space-between; padding: 12px 16px; border-radius: 12px; background: color-mix(in srgb, var(--text) 4%, var(--bg)); border: 1px solid var(--hairline); box-shadow: inset 0 2px 6px var(--shadow), 0 1px 0 var(--edge); font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.14em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.call-top #call-state { color: var(--text); }
+.call-moon { flex: 1; min-height: 0; display: grid; place-items: center; width: 100%; padding: 0; border: 0; background: none; --lvl: 0; }
+.call-moon img { width: min(62vw, 250px); height: auto; user-select: none; -webkit-user-drag: none; transform: scale(calc(1 + var(--lvl) * 0.1)); transition: transform 0.12s linear, filter 0.4s; opacity: 0.55; }
+@media (prefers-color-scheme: dark) { .call-moon img { filter: invert(1) brightness(1.3); } }
+.call-moon[data-state="listening"] img { opacity: 0.9; }
+.call-moon[data-state="speaking"] img { opacity: 1; animation: breathe 3s ease-in-out infinite; }
+.call-moon[data-state="thinking"] img { animation: breathe 1.6s ease-in-out infinite; }
+.call-subs { min-height: 4.4em; max-width: 30em; margin: 0 0 10px; white-space: pre-line; text-align: center; font: 13.5px/1.7 ui-monospace, "SF Mono", Menlo, monospace; color: var(--muted); }
+.call-actions { display: grid; justify-items: center; gap: 12px; }
+.call-go { min-width: 168px; padding: 13px 28px; border-radius: 12px; border: 1px solid var(--hairline); background: linear-gradient(to bottom, var(--surface), color-mix(in srgb, var(--muted) 14%, transparent)); box-shadow: inset 0 1px 0 var(--edge), 0 8px 20px -12px var(--shadow); color: var(--text); font: 500 14px/1 var(--sans); letter-spacing: 0.3em; text-indent: 0.3em; }
+.call-go.live { background: var(--ink); color: var(--ink-text); }
+.call-link { padding: 4px 8px; border: 0; background: none; color: var(--muted); font: 12px/1 var(--sans); letter-spacing: 0.14em; }
+#call .memory-status { min-height: 1.2em; margin: 6px 0 0; text-align: center; }
 
 /* ---- 数独面板 ---- */
 #game { flex: 1; overflow-y: auto; display: grid; justify-items: center; align-content: start; gap: 12px; padding: 8px 20px 14px; }
