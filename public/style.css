@@ -107,7 +107,7 @@ header h1 { flex: 1; margin: 0; text-align: center; font: 500 17px/1 var(--serif
 .msg .regen:hover, .msg .regen:active, .msg .speak:hover, .msg .speak:active, .msg .speak.on { opacity: 1; color: var(--text); }
 .msg .speak.loading { animation: speak-pulse 1s ease-in-out infinite; }
 @keyframes speak-pulse { 50% { opacity: 0.3; } }
-.toast { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); max-width: 80vw; padding: 10px 16px; border-radius: 14px; background: var(--text); color: var(--bg, #fff); font: 400 13px/1.4 var(--sans); z-index: 50; }
+.toast { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); max-width: 80vw; padding: 10px 16px; border-radius: 14px; background: var(--text); color: var(--bg, #fff); font: 400 13px/1.4 var(--sans); z-index: 50; }
 .time { margin-top: 6px; font: 400 11px/1 var(--sans); letter-spacing: 0.08em; color: var(--muted); font-variant-numeric: tabular-nums; }
 .day { display: flex; align-items: center; gap: 14px; margin: 6px 0 24px; color: var(--muted); font: 400 11px/1 var(--sans); letter-spacing: 0.22em; font-variant-numeric: tabular-nums; }
 .day::before, .day::after { content: ""; flex: 1; border-top: 1px solid var(--hairline); }
@@ -138,7 +138,7 @@ header h1 { flex: 1; margin: 0; text-align: center; font: 500 17px/1 var(--serif
 .chip button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; padding: 0; display: grid; place-items: center; border-radius: 50%; background: var(--ink); color: var(--ink-text); border: 0; }
 .chip button svg { width: 12px; height: 12px; stroke-width: 2; }
 
-#composer { display: flex; gap: 4px; align-items: flex-end; margin: 0 14px; margin-bottom: calc(12px + env(safe-area-inset-bottom)); padding: 6px; border-radius: 28px; }
+#composer { display: flex; gap: 4px; align-items: flex-end; margin: 0 14px 10px; padding: 6px; border-radius: 28px; }
 #input { flex: 1; resize: none; background: transparent; border: 0; outline: 0; padding: 9px 6px; max-height: 38vh; font: 16px/1.6 var(--serif); }
 #input::placeholder { color: var(--muted); }
 #composer:focus-within { border-color: color-mix(in srgb, var(--muted) 55%, transparent); }
@@ -183,13 +183,51 @@ dialog button.primary { background: var(--ink); color: var(--ink-text); border-c
 #reset { color: var(--danger); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+/* ---- 页面切换 ---- */
+body[data-page="radio"] :is(#messages, #attachments, #composer),
+body[data-page="board"] :is(#messages, #attachments) { display: none; }
+
+/* 底部标签栏：千禧年味的安静版。细斜面、按下去是凹进去的，不用糖果色，也不放图标 */
+#tabs { display: flex; gap: 2px; margin: 0 14px calc(10px + env(safe-area-inset-bottom)); padding: 3px; border-radius: 14px; background: var(--surface); border: 1px solid var(--hairline); box-shadow: inset 0 1px 0 var(--edge), 0 10px 30px -14px var(--shadow); -webkit-backdrop-filter: blur(22px) saturate(1.4); backdrop-filter: blur(22px) saturate(1.4); }
+#tabs button { flex: 1; padding: 10px 0; border: 0; border-radius: 11px; background: transparent; color: var(--muted); font: 500 12.5px/1 var(--sans); letter-spacing: 0.24em; text-indent: 0.24em; }
+#tabs button[hidden] { display: none; }
+#tabs button[aria-current="true"] { color: var(--text); background: linear-gradient(to bottom, color-mix(in srgb, var(--muted) 22%, transparent), color-mix(in srgb, var(--muted) 8%, transparent)); box-shadow: inset 0 1px 3px var(--shadow), inset 0 -1px 0 var(--edge); }
+
+/* ---- 电台 ---- */
+#radio { flex: 1; overflow-y: auto; padding: 8px 20px 20px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+#radio[hidden] { display: none; }
+.deck { margin: 4px 0 18px; padding: 14px 16px 13px; border-radius: 12px; background: color-mix(in srgb, var(--text) 4%, var(--bg)); border: 1px solid var(--hairline); box-shadow: inset 0 2px 6px var(--shadow), 0 1px 0 var(--edge); font: 12px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.08em; color: var(--muted); }
+.deck-line { display: flex; justify-content: space-between; gap: 14px; margin-bottom: 13px; }
+.deck-line span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.deck-line span:last-child { flex: none; font-variant-numeric: tabular-nums; }
+.deck-bar { display: grid; grid-template-columns: repeat(28, 1fr); gap: 2px; height: 8px; }
+.deck-bar i { background: var(--hairline); border-radius: 1px; }
+.deck-bar i.on { background: var(--text); opacity: 0.75; }
+.radio-make { display: flex; gap: 8px; align-items: center; }
+.radio-make input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--hairline); color: var(--text); font: 14.5px/1.5 var(--serif); outline: 0; }
+.radio-make input:focus { border-color: var(--muted); }
+.radio-make button { padding: 9px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--hairline); box-shadow: inset 0 1px 0 var(--edge); color: var(--text); font: 500 13px/1.5 var(--sans); letter-spacing: 0.12em; }
+#radio .memory-status { margin: 8px 0 6px; min-height: 1em; }
+#episodes { list-style: none; margin: 8px 0 0; padding: 0; }
+.ep { display: flex; align-items: center; gap: 14px; padding: 15px 2px; border-top: 1px solid var(--hairline); cursor: pointer; }
+.ep-no { flex: none; width: 2.2em; font: 11px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em; color: var(--muted); }
+.ep-body { flex: 1; min-width: 0; }
+.ep-title { font: 15.5px/1.65 var(--serif); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ep-meta { margin-top: 3px; font: 11px/1 var(--sans); letter-spacing: 0.08em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ep-play { flex: none; display: inline-flex; padding: 8px; border: 0; background: none; color: var(--muted); }
+.ep-play.on { color: var(--text); }
+.ep-play.loading { animation: speak-pulse 1s ease-in-out infinite; }
+.ep-empty { padding: 28px 0; text-align: center; color: var(--muted); font: italic 14px var(--serif); letter-spacing: 0.1em; }
+
 /* ---- 数独面板 ---- */
-#game { display: grid; justify-items: center; gap: 10px; padding: 2px 20px 12px; }
+#game { flex: 1; overflow-y: auto; display: grid; justify-items: center; align-content: start; gap: 12px; padding: 8px 20px 14px; }
+.say { width: min(100%, 34em); min-height: 2em; font: 15.5px/1.85 var(--serif); }
+.say p { margin: 0 0 0.7em; }
 #game[hidden] { display: none; }
-.game-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: min(100%, 360px, 40dvh); min-width: 290px; font: 12.5px/1 var(--sans); letter-spacing: 0.06em; color: var(--muted); }
+.game-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: min(100%, 380px, 46dvh); min-width: 300px; font: 12.5px/1.3 var(--sans); letter-spacing: 0.06em; color: var(--muted); }
 .game-actions { display: flex; gap: 6px; }
-.game-top button { padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); color: var(--text); font: 12.5px/1 var(--sans); }
-#board { display: grid; grid-template-columns: repeat(9, 1fr); width: min(100%, 360px, 40dvh); min-width: 290px; aspect-ratio: 1; overflow: hidden; border-radius: 16px; background: var(--surface); border: 1px solid var(--hairline); box-shadow: inset 0 1px 0 var(--edge), 0 10px 30px -14px var(--shadow); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
+.game-top button { white-space: nowrap; padding: 6px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--hairline); color: var(--text); font: 12.5px/1 var(--sans); }
+#board { display: grid; grid-template-columns: repeat(9, 1fr); width: min(100%, 380px, 46dvh); min-width: 290px; aspect-ratio: 1; overflow: hidden; border-radius: 16px; background: var(--surface); border: 1px solid var(--hairline); box-shadow: inset 0 1px 0 var(--edge), 0 10px 30px -14px var(--shadow); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); }
 .cell { display: grid; place-items: center; min-width: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text); font: 500 clamp(15px, 4.6vw, 20px)/1 var(--sans); border-top: 1px solid var(--hairline); border-left: 1px solid var(--hairline); transition: background 0.15s; }
 .cell:active { transform: none; }
 .cell.r0 { border-top: 0; } .cell.c0 { border-left: 0; }
@@ -201,10 +239,9 @@ dialog button.primary { background: var(--ink); color: var(--ink-text); border-c
 .cell.same { background: color-mix(in srgb, var(--muted) 22%, transparent); }
 .cell.sel { background: color-mix(in srgb, var(--muted) 34%, transparent); }
 .cell.bad { color: var(--danger); }
-#pad { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; width: min(100%, 360px, 40dvh); min-width: 290px; }
+#pad { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; width: min(100%, 380px, 46dvh); min-width: 290px; }
 #pad button { display: grid; place-items: center; height: 36px; padding: 0; border-radius: 12px; background: var(--surface); border: 1px solid var(--hairline); color: var(--text); font: 500 16px/1 var(--sans); }
 #pad button svg { width: 16px; height: 16px; }
-#game-btn[aria-pressed="true"] { background: var(--ink); color: var(--ink-text); }
 .level-pick { display: flex; gap: 8px; margin-bottom: 14px; }
 .level-pick button { flex: 1; }
 

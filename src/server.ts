@@ -248,6 +248,8 @@ app.post("/api/thread/regenerate", (c) => {
   return replyStream(c, conv, db.takeMessage(id));
 });
 
+app.get("/api/podcasts", (c) => c.json({ episodes: db.podcasts(thread().id, 40) }));
+
 // 微播客：写一段独白存进聊天，返回消息 id，前端再去朗读
 app.post("/api/podcast", async (c) => {
   if (!ttsEnabled) return c.json({ error: "还没配置语音" }, 400);

@@ -17,9 +17,7 @@
 <body>
   <main>
     <header>
-      <button id="game-btn" class="round" type="button" aria-label="数独" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16"/></svg>
-      </button>
+      <span class="spacer"></span>
       <h1 id="title">Claude</h1>
       <button id="settings-btn" class="round" type="button" aria-label="设置">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
@@ -41,6 +39,20 @@
       </div>
       <div id="board" role="grid"></div>
       <div id="pad"></div>
+      <div id="game-say" class="say"></div>
+    </section>
+
+    <section id="radio" hidden aria-label="电台">
+      <div class="deck" id="deck">
+        <div class="deck-line"><span id="deck-title">—</span><span id="deck-time">--:--</span></div>
+        <div class="deck-bar" id="deck-bar" aria-hidden="true"></div>
+      </div>
+      <div class="radio-make">
+        <input id="pod-topic" type="text" maxlength="100" placeholder="想听什么（可空）">
+        <button id="pod-run" type="button">来一期</button>
+      </div>
+      <p id="pod-status" class="memory-status"></p>
+      <ol id="episodes"></ol>
     </section>
 
     <div id="attachments"></div>
@@ -55,6 +67,12 @@
         <svg class="i-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
       </button>
     </form>
+
+    <nav id="tabs" aria-label="页面">
+      <button type="button" data-page="chat" aria-current="true">对话</button>
+      <button type="button" data-page="radio" id="tab-radio" hidden>电台</button>
+      <button type="button" data-page="board">棋盘</button>
+    </nav>
   </main>
 
   <dialog id="settings">
@@ -83,14 +101,6 @@
           <button id="pro-run" type="button">现在试一条</button>
         </div>
         <p id="push-status" class="memory-status"></p>
-      </fieldset>
-      <fieldset class="group" id="podcast-box" hidden>
-        <legend>微播客</legend>
-        <label class="field"><span>想听什么（可空）</span><input id="pod-topic" type="text" maxlength="100" placeholder="比如：今天的天气 / 随便聊聊"></label>
-        <div class="push-actions">
-          <button id="pod-run" type="button">来一期</button>
-        </div>
-        <p id="pod-status" class="memory-status"></p>
       </fieldset>
       <p id="memory-status" class="memory-status"></p>
       <p id="weread-status" class="memory-status"></p>

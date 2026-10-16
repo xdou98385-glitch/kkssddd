@@ -133,7 +133,8 @@ async function loadThread() {
     return;
   }
   state.tts = Boolean(data.tts);
-  $("podcast-box").hidden = !state.tts;
+  $("tab-radio").hidden = !state.tts;
+  if (location.hash === "#radio") setPage("radio");
   els.model.value = data.conversation.model;
   state.hasMore = data.hasMore;
   if (!data.messages.length) return showEmpty();
@@ -257,6 +258,7 @@ async function send(text, images) {
 async function runReply(url, payload) {
   clearRegen();
   els.messages.querySelector(".empty")?.remove();
+  if (game.open) $("game-say").textContent = "";
   const reply = bubble("assistant", "");
   reply.wrap.classList.add("enter");
   reply.b.classList.add("cursor");
@@ -281,6 +283,7 @@ async function runReply(url, payload) {
       if (event === "text") {
         acc += data;
         reply.b.innerHTML = renderMarkdown(acc);
+        if (game.open) $("game-say").innerHTML = renderMarkdown(acc);
         scrollDown();
       } else if (event === "tool") {
         reply.wrap.before(toolNote(data));
@@ -338,6 +341,32 @@ function stopSpeaking() {
   audio.load();
   btn.classList.remove("on", "loading");
   btn.innerHTML = SPEAK_ICON;
+  deckSet("—", 0, 0);
+}
+
+// 点一下播放，再点停止。必须在点击里同步 play()，iPhone 才不会拦；音频由浏览器自己请求
+function toggleSpeak(btn, id, meta) {
+  const was = speaking?.btn === btn;
+  stopSpeaking();
+  if (was) return;
+  const audio = new Audio("/api/tts/" + id);
+  speaking = { btn, audio };
+  btn.classList.add("on", "loading");
+  const title = meta?.title ?? "";
+  audio.addEventListener("playing", () => { btn.classList.remove("loading"); btn.innerHTML = STOP_ICON; deckSet(title, audio.currentTime, audio.duration); });
+  audio.addEventListener("timeupdate", () => { if (speaking?.audio === audio) deckSet(title, audio.currentTime, audio.duration); });
+  audio.addEventListener("ended", () => { if (speaking?.audio === audio) stopSpeaking(); });
+  audio.addEventListener("error", async () => {
+    if (speaking?.audio !== audio) return;
+    stopSpeaking();
+    const r = await fetch("/api/tts/" + id).catch(() => null);
+    toast((await r?.json().catch(() => null))?.error || "语音播放失败");
+  });
+  audio.play().catch((e) => {
+    if (speaking?.audio !== audio) return;
+    stopSpeaking();
+    if (e?.name === "NotAllowedError") toast("点一下就能听");
+  });
 }
 
 function addSpeak(wrap) {
@@ -349,28 +378,7 @@ function addSpeak(wrap) {
   btn.className = "speak";
   btn.title = btn.ariaLabel = "朗读";
   btn.innerHTML = SPEAK_ICON;
-  btn.onclick = () => {
-    const was = speaking?.btn === btn;
-    stopSpeaking();
-    if (was) return;
-    // 必须在点击里同步 play()，iPhone 才不会拦；音频由浏览器自己请求
-    const audio = new Audio("/api/tts/" + wrap.dataset.id);
-    speaking = { btn, audio };
-    btn.classList.add("on", "loading");
-    audio.addEventListener("playing", () => { btn.classList.remove("loading"); btn.innerHTML = STOP_ICON; });
-    audio.addEventListener("ended", () => { if (speaking?.audio === audio) stopSpeaking(); });
-    audio.addEventListener("error", async () => {
-      if (speaking?.audio !== audio) return;
-      stopSpeaking();
-      const r = await fetch("/api/tts/" + wrap.dataset.id).catch(() => null);
-      toast((await r?.json().catch(() => null))?.error || "语音播放失败");
-    });
-    audio.play().catch((e) => {
-      if (speaking?.audio !== audio) return;
-      stopSpeaking();
-      if (e?.name === "NotAllowedError") toast("点一下喇叭就能听");
-    });
-  };
+  btn.onclick = () => toggleSpeak(btn, wrap.dataset.id, { title: "对话 · " + firstLine(wrap.querySelector(".bubble")?.textContent ?? "") });
   time.append(btn);
 }
 
@@ -626,17 +634,57 @@ $("pro-run").onclick = async () => {
   btn.disabled = false;
 };
 
+// ---- 电台页 ----
+const TICKS = 28;
+$("deck-bar").innerHTML = "<i></i>".repeat(TICKS);
+const mmss = (t) => (Number.isFinite(t) ? `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}` : "--:--");
+
+function deckSet(title, cur, total) {
+  $("deck-title").textContent = title;
+  $("deck-time").textContent = title === "—" ? "--:--" : `${mmss(cur)} / ${mmss(total)}`;
+  const lit = total > 0 ? Math.floor((cur / total) * TICKS) : 0;
+  $("deck-bar").querySelectorAll("i").forEach((el, i) => el.classList.toggle("on", i < lit));
+}
+
+const plain = (t) => t.replace(/[*_`#>~\[\]]/g, "").replace(/\s+/g, " ").trim();
+const firstLine = (t) => { const s = plain(t); const m = s.match(/^.{6,34}?[。！？.!?…]/); return m ? m[0] : s.slice(0, 30); };
+
+async function loadEpisodes() {
+  const list = $("episodes");
+  let eps;
+  try { eps = (await api("/podcasts")).episodes; } catch { return; }
+  list.replaceChildren(...eps.map((e, i) => {
+    const li = document.createElement("li");
+    li.className = "ep";
+    const d = new Date(e.created_at);
+    const when = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    const title = firstLine(e.content);
+    li.innerHTML = `<span class="ep-no">${String(eps.length - i).padStart(2, "0")}</span><div class="ep-body"><div class="ep-title"></div><div class="ep-meta">${when}</div></div>`;
+    li.querySelector(".ep-title").textContent = title;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ep-play";
+    btn.ariaLabel = "播放";
+    btn.innerHTML = SPEAK_ICON;
+    btn.onclick = (ev) => { ev.stopPropagation(); toggleSpeak(btn, e.id, { title: `${String(eps.length - i).padStart(2, "0")} ${title}` }); };
+    li.onclick = () => btn.click();
+    li.append(btn);
+    return li;
+  }));
+  if (!eps.length) list.innerHTML = '<li class="ep-empty">还没有。点「来一期」。</li>';
+}
+
 $("pod-run").onclick = async () => {
   const btn = $("pod-run");
   btn.disabled = true;
   setStatus("pod-status", "写稿中，大概十几秒…");
   try {
-    const r = await api("/podcast", { method: "POST", body: { topic: $("pod-topic").value.trim() } });
+    await api("/podcast", { method: "POST", body: { topic: $("pod-topic").value.trim() } });
     setStatus("pod-status", "");
-    els.settings.close("cancel");
-    await refreshThread(true);
-    // 尽量直接播；iPhone 如果拦了，会提示点一下喇叭
-    document.querySelector(`.msg[data-id="${r.id}"] .speak`)?.click();
+    await loadEpisodes();
+    refreshThread(true);
+    // 尽量直接播；iPhone 如果拦了，会提示点一下
+    document.querySelector("#episodes .ep-play")?.click();
   } catch (err) { setStatus("pod-status", "失败：" + err.message, true); }
   btn.disabled = false;
 };
@@ -758,13 +806,6 @@ function askClaude(text) {
   if (!state.busy) send(text, []);
 }
 
-$("game-btn").onclick = () => {
-  game.open = !game.open;
-  $("game").hidden = !game.open;
-  $("game-btn").setAttribute("aria-pressed", String(game.open));
-  if (game.open) gameLoad();
-  else scrollDown(true);
-};
 $("g-hint").onclick = () => askClaude("给我个提示，先别直接说答案。");
 $("g-step").onclick = () => askClaude("你来走下一步，走完告诉我为什么这么下。");
 $("g-new").onclick = () => $("new-game").showModal();
@@ -797,3 +838,23 @@ document.addEventListener("keydown", (e) => {
   await loadThread();
   if ((await api("/session")).auth) $("logout").hidden = false;
 })();
+
+// ---- 页面切换：对话 / 电台 / 棋盘 ----
+const PAGES = { chat: "Claude", radio: "电台", board: "棋盘" };
+function setPage(p) {
+  if (!PAGES[p] || (p === "radio" && !state.tts)) p = "chat";
+  document.body.dataset.page = p;
+  $("title").textContent = PAGES[p];
+  document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-current", String(b.dataset.page === p)));
+  game.open = p === "board";
+  $("game").hidden = !game.open;
+  $("radio").hidden = p !== "radio";
+  if (game.open) gameLoad();
+  if (p === "radio") loadEpisodes();
+  if (p === "chat") scrollDown(true);
+  history.replaceState(null, "", p === "chat" ? location.pathname : "#" + p);
+}
+document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
+document.body.dataset.page = "chat";
+const startPage = location.hash.slice(1);
+if (startPage === "board") setPage("board"); // 电台要等知道语音有没有开，loadThread 之后再切

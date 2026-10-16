@@ -27,7 +27,7 @@ src/tts.ts        文字转语音（ElevenLabs）：按文本缓存到 data/tts/
 src/podcast.ts    微播客：设置里「来一期」→ Claude 写 150–250 字中文独白，存成 kind=podcast 的助手消息，前端自动点喇叭（翻英语再念）；iPhone 拦自动播放时提示点喇叭
 src/device.ts     设备事件（快捷指令上报，GET 和 POST 都支持，token 在 ?token= 或 Authorization）
 src/auth.ts       登录（签名 cookie + 防暴力）；/api/events 和 /sw.js 等少数路径公开
-public/           index.html / app.js / style.css（磨砂玻璃单色风）/ login.html / sw.js / hero.png（银箔月相）
+public/           底部标签栏切页（对话/电台/棋盘，body[data-page]，app.js 末尾的 setPage，地址 #radio #board）。电台页=播放器小窗+往期列表（GET /api/podcasts）。棋盘页保留输入框，回复同时镜像到 #game-say。index.html / app.js / style.css（磨砂玻璃单色风）/ login.html / sw.js / hero.png（银箔月相）
 ```
 
 ## .env 变量（只写名字）
@@ -55,6 +55,8 @@ ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_
 - **聊天记录曾每次更新都丢**：她服务器 `.env` 里有 `DB_PATH=data/chat.db`（是照着旧的 `.env.example` 抄的，现已改成注释），盖掉了 Dockerfile 的 `/data/chat.db`，库落在容器内部。已在 docker-compose.yml 的 environment 里写死 `DB_PATH: /data/chat.db`（environment 优先于 env_file），并帮她把当时的库拷到了 `./data/`。之后 `./data/chat.db` 应当持续存在。
 
 - **手机突然 TLS 打不开（"couldn't establish a secure connection"）**：服务器、容器、Funnel 都正常时，是她手机到 `ts.net` 公网入口这一段不通；在手机上装着并连上 Tailscale（VPN 开）就好，删掉 app 后就坏。结论：她的手机需要保持 Tailscale 开着，快捷指令也一样。想彻底摆脱，换一个不依赖 ts.net 的入口（自己的域名 + Caddy 直接放在 Vultr 公网 IP 上，或 Cloudflare Tunnel）。
+
+- **界面方向**：她要「千禧年、偏安静」，讨厌可爱风和手机桌面套手机；不要 GeoCities 式的吵。做法：结构先行（底部标签 + 整页），皮肤在现有单色磨砂玻璃上加克制的千禧年细节（凹陷按下的标签、LCD 式等宽读数 + 分段进度条、细斜面）。后续想做通话页（黑屏月相）、也可继续把千禧年味铺到更多地方。
 
 ## 待办 / 她提过的想法
 - 确认她已轮换 DEVICE_TOKEN（charging_off 快捷指令她已补）。

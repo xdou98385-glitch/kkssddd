@@ -230,6 +230,13 @@ export function latestMessage(): { role: "user" | "assistant"; created_at: numbe
     | undefined;
 }
 
+/** 当前对话里的微播客，新的在前 */
+export function podcasts(conversationId: string, limit: number): { id: number; content: string; created_at: number }[] {
+  return db
+    .prepare("SELECT id, content, created_at FROM messages WHERE conversation_id = ? AND kind = 'podcast' ORDER BY id DESC LIMIT ?")
+    .all(conversationId, limit) as { id: number; content: string; created_at: number }[];
+}
+
 export function proactiveStats(conversationId: string, since: number): { count: number; lastAt: number } {
   const r = db
     .prepare(
