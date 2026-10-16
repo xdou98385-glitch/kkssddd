@@ -8,5 +8,7 @@ services:
     network_mode: host
     environment:
       HOST: 127.0.0.1
+      # 写死在这里：environment 优先于 .env，防止 .env 里的 DB_PATH 把库指到容器内部
+      DB_PATH: /data/chat.db
     volumes:
       - ./data:/data

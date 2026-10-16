@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { secureHeaders } from "hono/secure-headers";
@@ -7,7 +7,7 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import * as db from "./db.ts";
 import { authEnabled, login, logout, requireLogin } from "./auth.ts";
-import { buildHistory, buildSystem, maybeSummarize, stripToolMarks } from "./context.ts";
+import { buildHistory, buildSystem, DEFAULT_WINDOW, maybeSummarize, stripToolMarks, WINDOW_PRESETS } from "./context.ts";
 import { isImageName, readImage, saveImage } from "./uploads.ts";
 import { DEFAULT_SYSTEM } from "./persona.ts";
 import { wereadStatus } from "./weread.ts";
@@ -16,6 +16,9 @@ import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
+import { makePodcast } from "./podcast.ts";
+import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
+import { TtsError, speechText, synthesize, ttsEnabled } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
@@ -129,10 +132,16 @@ app.get("/api/models", (c) => c.json({ models: MODELS, default: DEFAULT_MODEL })
 
 const persona = () => db.getSetting("system_prompt") || DEFAULT_SYSTEM;
 
-app.get("/api/settings", (c) => c.json({ system_prompt: persona() }));
+const windowPreset = () => {
+  const p = db.getSetting("window_preset");
+  return p in WINDOW_PRESETS ? p : DEFAULT_WINDOW;
+};
+
+app.get("/api/settings", (c) => c.json({ system_prompt: persona(), window_preset: windowPreset() }));
 app.put("/api/settings", async (c) => {
-  const body = await c.req.json<{ system_prompt?: string }>();
+  const body = await c.req.json<{ system_prompt?: string; window_preset?: string }>();
   db.setSetting("system_prompt", String(body.system_prompt ?? ""));
+  if (body.window_preset && body.window_preset in WINDOW_PRESETS) db.setSetting("window_preset", body.window_preset);
   return c.json({ ok: true });
 });
 
@@ -145,6 +154,8 @@ app.get("/api/thread", (c) => {
   const limit = Math.min(Number(c.req.query("limit")) || 40, 100);
   return c.json({
     conversation: { id: conv.id, model: conv.model },
+    tts: ttsEnabled,
+    call: callEnabled,
     ...db.messagePage(conv.id, before, limit),
   });
 });
@@ -178,17 +189,9 @@ app.get("/uploads/:name", (c) => {
   });
 });
 
-// 发送一条消息，回复用 SSE 流式返回
-app.post("/api/thread/chat", async (c) => {
-  const conv = thread();
-  const body = await c.req.json<{ content?: string; images?: string[] }>();
-  const userText = String(body.content ?? "").trim();
-  const images = (body.images ?? []).filter((n) => isImageName(n) && readImage(n)).slice(0, 4);
-  if (!userText && !images.length) return c.json({ error: "empty message" }, 400);
+// 生成回复并用 SSE 流式返回（发送消息和重新生成共用）
+function replyStream(c: Context, conv: db.Conversation, restoreOnFail?: ReturnType<typeof db.takeMessage>) {
   const model = findModel(conv.model) ?? MODELS[0];
-
-  db.addMessage(conv.id, "user", userText, images);
-
   return streamSSE(c, async (sse) => {
     const abort = new AbortController();
     sse.onAbort(() => abort.abort());
@@ -221,10 +224,87 @@ app.post("/api/thread/chat", async (c) => {
     }
     // 去掉模型自己写的「系统记录」（防伪造），真实的工具调用由代码另外记下
     text = stripToolMarks(text);
-    if (text) db.addMessage(conv.id, "assistant", text, [], null, toolsUsed);
-    await sse.writeSSE({ event: "done", data: "{}" });
+    let id: number | null = null;
+    if (text) id = db.addMessage(conv.id, "assistant", text, [], null, toolsUsed);
+    else if (restoreOnFail) db.restoreMessage(restoreOnFail); // 重新生成失败：把原来那条放回去
+    await sse.writeSSE({ event: "done", data: JSON.stringify({ id }) });
     void maybeSummarize(conv.id);
   });
+}
+
+// 发送一条消息，回复用 SSE 流式返回
+app.post("/api/thread/chat", async (c) => {
+  const conv = thread();
+  const body = await c.req.json<{ content?: string; images?: string[]; tz?: string }>();
+  // 浏览器上报的时区：用来给她的每条消息标上本地时间
+  if (body.tz && body.tz !== db.getSetting("tz")) {
+    try { new Intl.DateTimeFormat("en", { timeZone: body.tz }); db.setSetting("tz", body.tz); } catch { /* 时区不对就忽略 */ }
+  }
+  const userText = String(body.content ?? "").trim();
+  const images = (body.images ?? []).filter((n) => isImageName(n) && readImage(n)).slice(0, 4);
+  if (!userText && !images.length) return c.json({ error: "empty message" }, 400);
+
+  db.addMessage(conv.id, "user", userText, images);
+  return replyStream(c, conv);
+});
+
+// 重新生成最后一条回复：删掉它，用同样的历史再答一次
+app.post("/api/thread/regenerate", (c) => {
+  const conv = thread();
+  const id = db.regenerableTail(conv.id);
+  if (id === null) return c.json({ error: "这条不能重新生成" }, 400);
+  return replyStream(c, conv, db.takeMessage(id));
+});
+
+app.get("/api/podcasts", (c) => c.json({ episodes: db.podcasts(thread().id, 40) }));
+
+// 通话：一轮 = 上传她说的一段录音（或 X-Call-Start 表示刚接通）→ 识别 → Claude 回 → 返回文字，音频走 /api/tts/:id
+app.post("/api/call/turn", bodyLimit({ maxSize: 8 * 1024 * 1024, onError: (c) => c.json({ error: "录音太大" }, 413) }), async (c) => {
+  if (!callEnabled) return c.json({ error: "还没配置语音" }, 400);
+  try {
+    if (c.req.header("x-call-start")) return c.json({ maxMinutes: MAX_CALL_MIN, ...(await callTurn({ hello: true })) });
+    const audio = Buffer.from(await c.req.arrayBuffer());
+    if (audio.length < 800) return c.json({ heard: "" });
+    const heard = await transcribe(audio, c.req.header("content-type") ?? "", Number(c.req.header("x-duration-ms")) || 0);
+    if (heard.replace(/[\s.,!?，。！？…]/g, "").length < 2) return c.json({ heard: "" }); // 噪音或没说清，让前端接着听
+    return c.json(await callTurn({ text: heard }));
+  } catch (err) {
+    if (!(err instanceof CallError)) console.error("call:", err);
+    return c.json({ error: err instanceof CallError ? err.message : "通话出错了" }, err instanceof CallError ? 429 : 502);
+  }
+});
+
+// 微播客：写一段独白存进聊天，返回消息 id，前端再去朗读
+app.post("/api/podcast", async (c) => {
+  if (!ttsEnabled) return c.json({ error: "还没配置语音" }, 400);
+  const body = await c.req.json<{ topic?: string }>().catch(() => ({}) as { topic?: string });
+  const r = await makePodcast(String(body.topic ?? ""));
+  return "error" in r ? c.json(r, 500) : c.json(r);
+});
+
+// 把一条助手消息念出来。用 GET + 支持 Range，iPhone 的 <audio> 才肯播
+app.get("/api/tts/:id", async (c) => {
+  if (!ttsEnabled) return c.json({ error: "还没配置语音" }, 404);
+  const content = db.assistantText(Number(c.req.param("id")));
+  let audio: Buffer;
+  try {
+    const text = content ? await speechText(content) : "";
+    if (!text) return c.json({ error: "这条没有可念的内容" }, 400);
+    audio = await synthesize(text);
+  } catch (err) {
+    if (!(err instanceof TtsError)) console.error("tts:", err);
+    return c.json({ error: err instanceof TtsError ? err.message : "语音生成失败" }, err instanceof TtsError ? 429 : 502);
+  }
+  const size = audio.length;
+  const headers = { "Content-Type": "audio/mpeg", "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=31536000" };
+  const m = /^bytes=(\d*)-(\d*)$/.exec(c.req.header("range") ?? "");
+  if (m && (m[1] || m[2])) {
+    const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+    const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+    if (start >= size || start > end) return c.body(null, 416, { "Content-Range": `bytes */${size}` });
+    return c.body(new Uint8Array(audio.subarray(start, end + 1)), 206, { ...headers, "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(end - start + 1) });
+  }
+  return c.body(new Uint8Array(audio), 200, { ...headers, "Content-Length": String(size) });
 });
 
 app.use("*", serveStatic({ root: "public" }));
@@ -234,6 +314,7 @@ const server = serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.
   console.log(`listening on http://localhost:${port}`);
   startScheduler();
   console.log(`device events: ${deviceEnabled ? "ON" : "OFF (DEVICE_TOKEN not set)"}`);
+  console.log(`tts: ${ttsEnabled ? "ON (ElevenLabs)" : "OFF (ELEVENLABS_API_KEY / ELEVENLABS_VOICE_ID not set)"}`);
   const s = await memosStatus();
   console.log(
     !s.enabled

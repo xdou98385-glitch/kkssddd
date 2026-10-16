@@ -43,7 +43,7 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
 `);
-ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的
+ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的；'podcast' = 她点「来一期」生成的微播客
 ensureColumn("messages", "tools", "TEXT"); // JSON 数组：这条回复真正调用过的工具名（系统记录，不是模型自己说的）
 ensureColumn("messages", "images", "TEXT"); // JSON 数组：上传图片的文件名
 ensureColumn("conversations", "summary", "TEXT NOT NULL DEFAULT ''"); // 更早对话的摘要
@@ -64,6 +64,7 @@ export interface Message {
   content: string;
   images: string[];
   tools: string[];
+  kind: string | null; // 'proactive' = 主动消息
   created_at: number;
 }
 
@@ -73,6 +74,7 @@ interface MessageRow {
   content: string;
   images: string | null;
   tools: string | null;
+  kind: string | null;
   created_at: number;
 }
 const toMessage = (r: MessageRow): Message => ({
@@ -81,6 +83,7 @@ const toMessage = (r: MessageRow): Message => ({
   content: r.content,
   images: r.images ? JSON.parse(r.images) : [],
   tools: r.tools ? JSON.parse(r.tools) : [],
+  kind: r.kind,
   created_at: r.created_at,
 });
 
@@ -128,7 +131,7 @@ export function messagePage(
 ): { messages: Message[]; hasMore: boolean } {
   const rows = db
     .prepare(
-      `SELECT id, role, content, images, tools, created_at FROM messages
+      `SELECT id, role, content, images, tools, kind, created_at FROM messages
        WHERE conversation_id = ? AND id < ? ORDER BY id DESC LIMIT ?`,
     )
     .all(conversationId, before ?? Number.MAX_SAFE_INTEGER, limit + 1) as unknown as MessageRow[];
@@ -141,7 +144,7 @@ export function windowMessages(conversationId: string, afterId: number): Message
   return (
     db
       .prepare(
-        `SELECT id, role, content, images, tools, created_at FROM messages
+        `SELECT id, role, content, images, tools, kind, created_at FROM messages
          WHERE conversation_id = ? AND id > ? ORDER BY id`,
       )
       .all(conversationId, afterId) as unknown as MessageRow[]
@@ -153,10 +156,10 @@ export function addMessage(
   role: Message["role"],
   content: string,
   images: string[] = [],
-  kind: "proactive" | null = null,
+  kind: "proactive" | "podcast" | "call" | null = null,
   tools: string[] = [],
-): void {
-  db.prepare(
+): number {
+  const r = db.prepare(
     "INSERT INTO messages (conversation_id, role, content, images, kind, tools, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ).run(
     conversationId,
@@ -168,6 +171,13 @@ export function addMessage(
     now(),
   );
   db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now(), conversationId);
+  return Number(r.lastInsertRowid);
+}
+
+/** 一条助手消息的正文（给语音用） */
+export function assistantText(id: number): string | null {
+  const r = db.prepare("SELECT content FROM messages WHERE id = ? AND role = 'assistant'").get(id) as { content: string } | undefined;
+  return r?.content ?? null;
 }
 
 /** 最后一条消息（含是否是主动发的），用来判断要不要再主动开口 */
@@ -177,6 +187,54 @@ export function lastMessage(
   return db
     .prepare("SELECT role, kind, created_at FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1")
     .get(conversationId) as { role: "user" | "assistant"; kind: string | null; created_at: number } | undefined;
+}
+
+/** 可以重新生成的末尾回复：最后一条是她正常对话里的助手回复，且前一条是她说的话。返回它的 id */
+export function regenerableTail(conversationId: string): number | null {
+  const rows = db
+    .prepare("SELECT id, role, kind FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 2")
+    .all(conversationId) as { id: number; role: string; kind: string | null }[];
+  const [last, prev] = rows;
+  return last && prev && last.role === "assistant" && last.kind === null && prev.role === "user" ? last.id : null;
+}
+
+interface RawMessage {
+  conversation_id: string;
+  role: string;
+  content: string;
+  images: string | null;
+  kind: string | null;
+  tools: string | null;
+  created_at: number;
+}
+
+/** 删掉一条消息并返回原样，重新生成失败时用 restoreMessage 放回去 */
+export function takeMessage(id: number): RawMessage | undefined {
+  const row = db
+    .prepare("SELECT conversation_id, role, content, images, kind, tools, created_at FROM messages WHERE id = ?")
+    .get(id) as RawMessage | undefined;
+  if (row) db.prepare("DELETE FROM messages WHERE id = ?").run(id);
+  return row;
+}
+
+export function restoreMessage(m: RawMessage): void {
+  db.prepare(
+    "INSERT INTO messages (conversation_id, role, content, images, kind, tools, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(m.conversation_id, m.role, m.content, m.images, m.kind, m.tools, m.created_at);
+}
+
+/** 整个库里最新的一条消息（不分对话；只有一条主对话） */
+export function latestMessage(): { role: "user" | "assistant"; created_at: number } | undefined {
+  return db.prepare("SELECT role, created_at FROM messages ORDER BY id DESC LIMIT 1").get() as
+    | { role: "user" | "assistant"; created_at: number }
+    | undefined;
+}
+
+/** 当前对话里的微播客，新的在前 */
+export function podcasts(conversationId: string, limit: number): { id: number; content: string; created_at: number }[] {
+  return db
+    .prepare("SELECT id, content, created_at FROM messages WHERE conversation_id = ? AND kind = 'podcast' ORDER BY id DESC LIMIT ?")
+    .all(conversationId, limit) as { id: number; content: string; created_at: number }[];
 }
 
 export function proactiveStats(conversationId: string, since: number): { count: number; lastAt: number } {

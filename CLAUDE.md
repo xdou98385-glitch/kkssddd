@@ -23,13 +23,16 @@ src/weread.ts     微信读书网关（只读，参数平铺，skill_version 1.0
 src/sudoku.ts     数独出题（唯一解）、提示（唯一候选数/唯一位置）
 src/push.ts       Web Push（VAPID 自动生成存库，sub 默认用站点 https 地址）
 src/proactive.ts  主动消息心跳（安静时段/每日上限/未回复不再发/刚聊过不发/间隔 3 小时）
+src/tts.ts        文字转语音（ElevenLabs）：按文本缓存到 data/tts/，每月字符上限，GET /api/tts/:消息id（支持 Range，iPhone 才肯播）
+src/podcast.ts    微播客：设置里「来一期」→ Claude 写 150–250 字中文独白，存成 kind=podcast 的助手消息，前端自动点喇叭（翻英语再念）；iPhone 拦自动播放时提示点喇叭
+src/call.ts        通话：录音 → ElevenLabs Scribe 识别 → Claude 用英语短句回（CALL_GUIDE，effort medium）→ 预先合成语音；两边都存进聊天（kind=call）。POST /api/call/turn（audio/* 请求体 + X-Duration-Ms；X-Call-Start 表示刚接通，由它先开口）
 src/device.ts     设备事件（快捷指令上报，GET 和 POST 都支持，token 在 ?token= 或 Authorization）
 src/auth.ts       登录（签名 cookie + 防暴力）；/api/events 和 /sw.js 等少数路径公开
-public/           index.html / app.js / style.css（磨砂玻璃单色风）/ login.html / sw.js / hero.png（银箔月相）
+public/           底部标签栏切页（对话/电台/棋盘，body[data-page]，app.js 末尾的 setPage，地址 #radio #board）。电台页=播放器小窗+往期列表（GET /api/podcasts）。棋盘页保留输入框，回复同时镜像到 #game-say。index.html / app.js / style.css（磨砂玻璃单色风）/ login.html / sw.js / hero.png（银箔月相）
 ```
 
 ## .env 变量（只写名字）
-ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_TOKEN, PROACTIVE_EVERY_MIN(默认90), PUSH_CONTACT(可空), PORT/DB_PATH。空值要用 `||` 而不是 `??` 判断（compose 的 env_file 会把空行变成空字符串）。
+ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, TTS_MODEL(默认 eleven_flash_v2_5), TTS_MAX_CHARS(400), TTS_MONTHLY_CHARS(20000), TTS_SPEED(0.85)/TTS_STABILITY(0.35)/TTS_STYLE(0.3), TTS_CALL_ME(默认 Kay), TTS_TRANSLATE_TO(默认 English), CALL_MONTHLY_MINUTES(30), CALL_MAX_MINUTES(10), CALL_STT_MODEL(scribe_v1，被拒绝时自动换 scribe_v2), PROACTIVE_EVERY_MIN(默认90), PUSH_CONTACT(可空), PORT/DB_PATH。空值要用 `||` 而不是 `??` 判断（compose 的 env_file 会把空行变成空字符串）。
 
 ## 部署
 服务器上：`cd ~/kkssddd && git pull && docker compose up -d --build`。数据在 `./data/`（chat.db + uploads）。设置页(⚙)里有 Memos/读书/设备/通知的连接状态行，启动日志有 `memory:`/`weread:`/`device events:` 行，排查先看这些。
@@ -38,7 +41,7 @@ ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_
 - 只有一条持续对话；最近消息原文，超过 60 条时前面压成 Haiku 写的滚动摘要，只留 30 条（批量折叠才能保住提示词缓存）。界面历史完整。
 - 图片发送前浏览器压缩到长边 1568 的 JPEG，只有最近 10 条消息里的图会真发给模型。
 - **防编造**：模型老是不调工具就说"我看了棋盘/翻了笔记"。已修：代码记录真实调用的工具存 `messages.tools`，回放历史时给助手回复加 `[系统记录：这条回复调用了工具 …]`，模型自己写的这种行会被 `stripToolMarks` 删掉；HONESTY_GUIDE 写了规则；Sonnet effort 改成 high。**这个修复还没在她真机上验证**，她打算清空聊天重新开始后观察。
-- 工具调用的小字（"看了眼棋盘"）只在当次显示，刷新后不保留。
+- 工具调用的小字：当次显示带参数的，刷新后按 `messages.tools` 里的工具名显示通用小字（`app.js` 的 TOOL_LABELS），参数没存。
 - 主动消息每次心跳都会调 Claude（花钱），默认关闭，她在设置里勾选开启；强制测试按钮「现在试一条」跳过所有限制。
 - iPhone 推送：必须"添加到主屏幕"后从图标打开；已在她真机上跑通。
 
@@ -49,11 +52,20 @@ ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_
 - 没装中文衬线字体，截图里衬线是回退字体，真机（iOS 宋体）才对。
 - Hono 自带 logger 会把问号后的参数（含设备口令）打进日志，所以用了自己的访问日志。
 
+- 语音：每条助手消息时间旁有喇叭按钮，点了才生成（不自动念）。她的 ElevenLabs 声音是英文的（中文她觉得尬），所以点喇叭时先用 Sonnet(低 effort) 把回复翻成英语再念（`speechText`，译文和音频都按文本缓存，TTS_TRANSLATE_TO=none 关掉）；聊天文字仍是中文。微播客已做（podcast.ts，真机效果待她反馈）。通话已做（前端在 app.js 末尾「通话」段：接通时在点击里先放静音解锁播放→getUserMedia→它先开口→VAD 听到停顿 1.1s 收尾→上传→回复→再听；点月亮可打断；离开页面/切后台自动挂断）。**iPhone PWA 上麦克风、回声、播放音量都没真机验证过**，是最可能出问题的地方。延迟约 5–8 秒/轮（识别+Claude+合成各一次，没做流式），要更像电话得改成流式。
+- **聊天记录曾每次更新都丢**：她服务器 `.env` 里有 `DB_PATH=data/chat.db`（是照着旧的 `.env.example` 抄的，现已改成注释），盖掉了 Dockerfile 的 `/data/chat.db`，库落在容器内部。已在 docker-compose.yml 的 environment 里写死 `DB_PATH: /data/chat.db`（environment 优先于 env_file），并帮她把当时的库拷到了 `./data/`。之后 `./data/chat.db` 应当持续存在。
+
+- **手机突然 TLS 打不开（"couldn't establish a secure connection"）**：服务器、容器、Funnel 都正常时，是她手机到 `ts.net` 公网入口这一段不通；在手机上装着并连上 Tailscale（VPN 开）就好，删掉 app 后就坏。结论：她的手机需要保持 Tailscale 开着，快捷指令也一样。想彻底摆脱，换一个不依赖 ts.net 的入口（自己的域名 + Caddy 直接放在 Vultr 公网 IP 上，或 Cloudflare Tunnel）。
+
+- **界面方向**：她要「千禧年、偏安静」，讨厌可爱风和手机桌面套手机；不要 GeoCities 式的吵。做法：结构先行（底部标签 + 整页），皮肤在现有单色磨砂玻璃上加克制的千禧年细节（凹陷按下的标签、LCD 式等宽读数 + 分段进度条、细斜面）。后续想做通话页（黑屏月相）、也可继续把千禧年味铺到更多地方。
+
+- **仓库目前是公开的**（她说以后再处理，也可能想开源赚点外快）。历史里没扫到密钥。真要公开/开源前要处理：CLAUDE.md 里她的 ts.net 地址和个人称呼、persona.ts 里她的默认人设、README 和仓库描述；或者先改成私有。
+
 ## 待办 / 她提过的想法
-- 确认她已轮换 DEVICE_TOKEN；补一条"拔掉电源"快捷指令（kind=charging_off）。
+- 确认她已轮换 DEVICE_TOKEN（charging_off 快捷指令她已补）。
 - 观察主动消息的花销和分寸（太贵调大 PROACTIVE_EVERY_MIN，太频繁调每天上限）。
 - 验证防编造修复在真机上是否有效；如果还会编，再想办法（比如把工具结果也存进历史、必要时强制先调工具）。
 - 语音（她看的 Voicebox 在 Mac M4 上调不出满意效果，先放着；可选 Kokoro 或云端 TTS）。
 - 小红书 / X 接入（最脆弱，放最后）；更多益智小游戏；Minecraft（需要更大的服务器，她最近不玩大游戏）。
-- 工具调用小字持久化；把外观里"招牌元素"（月相）用到更多地方。
+- 把外观里"招牌元素"（月相）用到更多地方。
 - 是否要把分支合并到主分支（她没要求前不要建 PR）。
