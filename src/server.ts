@@ -7,7 +7,7 @@ import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
 import * as db from "./db.ts";
 import { authEnabled, login, logout, requireLogin } from "./auth.ts";
-import { buildHistory, buildSystem, maybeSummarize, stripToolMarks } from "./context.ts";
+import { buildHistory, buildSystem, DEFAULT_WINDOW, maybeSummarize, stripToolMarks, WINDOW_PRESETS } from "./context.ts";
 import { isImageName, readImage, saveImage } from "./uploads.ts";
 import { DEFAULT_SYSTEM } from "./persona.ts";
 import { wereadStatus } from "./weread.ts";
@@ -131,10 +131,16 @@ app.get("/api/models", (c) => c.json({ models: MODELS, default: DEFAULT_MODEL })
 
 const persona = () => db.getSetting("system_prompt") || DEFAULT_SYSTEM;
 
-app.get("/api/settings", (c) => c.json({ system_prompt: persona() }));
+const windowPreset = () => {
+  const p = db.getSetting("window_preset");
+  return p in WINDOW_PRESETS ? p : DEFAULT_WINDOW;
+};
+
+app.get("/api/settings", (c) => c.json({ system_prompt: persona(), window_preset: windowPreset() }));
 app.put("/api/settings", async (c) => {
-  const body = await c.req.json<{ system_prompt?: string }>();
+  const body = await c.req.json<{ system_prompt?: string; window_preset?: string }>();
   db.setSetting("system_prompt", String(body.system_prompt ?? ""));
+  if (body.window_preset && body.window_preset in WINDOW_PRESETS) db.setSetting("window_preset", body.window_preset);
   return c.json({ ok: true });
 });
 

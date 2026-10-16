@@ -482,7 +482,9 @@ els.input.addEventListener("input", autosize);
 
 // ---- 设置 ----
 $("settings-btn").onclick = async () => {
-  els.systemPrompt.value = (await api("/settings")).system_prompt;
+  const st = await api("/settings");
+  els.systemPrompt.value = st.system_prompt;
+  $("window-preset").value = st.window_preset;
   showMemoryStatus("检查记忆连接…", false);
   loadProactiveUI();
   els.settings.showModal();
@@ -510,7 +512,7 @@ function showMemoryStatus(text, bad, id = "memory-status") {
 }
 els.settings.addEventListener("close", async () => {
   if (els.settings.returnValue === "save") {
-    await api("/settings", { method: "PUT", body: { system_prompt: els.systemPrompt.value } });
+    await api("/settings", { method: "PUT", body: { system_prompt: els.systemPrompt.value, window_preset: $("window-preset").value } });
     await api("/thread", { method: "PATCH", body: { model: els.model.value } });
     localStorage.setItem("model", els.model.value);
     try {

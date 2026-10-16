@@ -26,8 +26,15 @@ export async function buildSystem(conv: db.Conversation): Promise<string> {
 
 // 上下文策略：摘要之后的消息原文都带着；超过 MAX_WINDOW 条时，把最早的压进摘要，只留 KEEP 条。
 // 一次砍一大截而不是每轮滑动一条，这样前缀能稳定很多轮，提示词缓存才有用。
-const MAX_WINDOW = 60;
-const KEEP = 30;
+// 窗口大小可在设置里选档：越小越省额度，越大越记得原话
+export const WINDOW_PRESETS: Record<string, { max: number; keep: number }> = {
+  tight: { max: 30, keep: 14 },
+  balanced: { max: 40, keep: 20 },
+  wide: { max: 60, keep: 30 },
+  long: { max: 100, keep: 50 },
+};
+export const DEFAULT_WINDOW = "balanced";
+const windowSize = () => WINDOW_PRESETS[db.getSetting("window_preset")] ?? WINDOW_PRESETS[DEFAULT_WINDOW];
 // 只有最近这么多条消息里的图片会真的发给模型，更早的换成文字占位，省 token
 const IMAGE_RECENT = 10;
 
@@ -92,10 +99,11 @@ export async function maybeSummarize(convId: string): Promise<void> {
   const conv = db.getConversation(convId);
   if (!conv) return;
   const win = db.windowMessages(conv.id, conv.summarized_upto);
-  if (win.length <= MAX_WINDOW) return;
+  const { max, keep } = windowSize();
+  if (win.length <= max) return;
 
   // 保留的部分必须从 user 消息开始
-  let cut = win.length - KEEP;
+  let cut = win.length - keep;
   while (cut < win.length && win[cut].role !== "user") cut++;
   if (cut <= 0 || cut >= win.length) return;
   const old = win.slice(0, cut);
