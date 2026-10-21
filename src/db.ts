@@ -42,7 +42,20 @@ db.exec(`
     detail TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
+  CREATE TABLE IF NOT EXISTS episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT '',
+    title_en TEXT NOT NULL DEFAULT '',
+    zh TEXT NOT NULL DEFAULT '',
+    en TEXT NOT NULL DEFAULT '',
+    topic TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    error TEXT,
+    created_at INTEGER NOT NULL
+  );
 `);
+// 上次进程被重启时还没写完的电台节目，标成失败，免得一直转圈
+db.prepare("UPDATE episodes SET status = 'failed', error = '服务重启，这期没做完' WHERE status IN ('writing', 'voicing')").run();
 ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的；'podcast' = 她点「来一期」生成的微播客
 ensureColumn("messages", "tools", "TEXT"); // JSON 数组：这条回复真正调用过的工具名（系统记录，不是模型自己说的）
 ensureColumn("messages", "images", "TEXT"); // JSON 数组：上传图片的文件名
@@ -230,12 +243,28 @@ export function latestMessage(): { role: "user" | "assistant"; created_at: numbe
     | undefined;
 }
 
-/** 当前对话里的微播客，新的在前 */
-export function podcasts(conversationId: string, limit: number): { id: number; content: string; created_at: number }[] {
-  return db
-    .prepare("SELECT id, content, created_at FROM messages WHERE conversation_id = ? AND kind = 'podcast' ORDER BY id DESC LIMIT ?")
-    .all(conversationId, limit) as { id: number; content: string; created_at: number }[];
+// ---- 电台节目（独立存放，不进聊天记录）----
+export interface Episode {
+  id: number;
+  title: string;
+  title_en: string;
+  zh: string;
+  en: string;
+  topic: string;
+  status: "writing" | "voicing" | "ready" | "failed";
+  error: string | null;
+  created_at: number;
 }
+export function createEpisode(topic: string): number {
+  return Number(db.prepare("INSERT INTO episodes (topic, status, created_at) VALUES (?, 'writing', ?)").run(topic, now()).lastInsertRowid);
+}
+export function updateEpisode(id: number, f: Partial<Omit<Episode, "id" | "created_at">>): void {
+  const keys = Object.keys(f) as (keyof typeof f)[];
+  if (!keys.length) return;
+  db.prepare(`UPDATE episodes SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => f[k] ?? null), id);
+}
+export const getEpisode = (id: number) => db.prepare("SELECT * FROM episodes WHERE id = ?").get(id) as Episode | undefined;
+export const listEpisodes = (limit: number) => db.prepare("SELECT * FROM episodes ORDER BY id DESC LIMIT ?").all(limit) as Episode[];
 
 export function proactiveStats(conversationId: string, since: number): { count: number; lastAt: number } {
   const r = db

@@ -24,7 +24,7 @@ src/sudoku.ts     数独出题（唯一解）、提示（唯一候选数/唯一�
 src/push.ts       Web Push（VAPID 自动生成存库，sub 默认用站点 https 地址）
 src/proactive.ts  主动消息心跳（安静时段/每日上限/未回复不再发/刚聊过不发/间隔 3 小时）
 src/tts.ts        文字转语音（ElevenLabs）：按文本缓存到 data/tts/，每月字符上限，GET /api/tts/:消息id（支持 Range，iPhone 才肯播）
-src/podcast.ts    微播客：设置里「来一期」→ Claude 写 150–250 字中文独白，存成 kind=podcast 的助手消息，前端自动点喇叭（翻英语再念）；iPhone 拦自动播放时提示点喇叭
+src/podcast.ts    电台节目：设置外的「电台」页点「来一期」→ 后台让 Claude 一次写出 <title>/<title_en>/<zh>/<en>（中文稿 600–900 字 + 同内容的英语口语稿），存 episodes 表（不进聊天记录），英语稿按段落分块、带前后文（previous_text/next_text）用 podcastVoice 配音再拼起来；status: writing→voicing→ready/failed，前端轮询 GET /api/podcasts，音频走 GET /api/podcast/:id/audio（Range）
 src/call.ts        通话：录音 → ElevenLabs Scribe 识别 → Claude 用英语短句回（CALL_GUIDE，effort medium）→ 预先合成语音；两边都存进聊天（kind=call）。POST /api/call/turn（audio/* 请求体 + X-Duration-Ms；X-Call-Start 表示刚接通，由它先开口）
 src/device.ts     设备事件（快捷指令上报，GET 和 POST 都支持，token 在 ?token= 或 Authorization）
 src/auth.ts       登录（签名 cookie + 防暴力）；/api/events 和 /sw.js 等少数路径公开
@@ -32,7 +32,7 @@ public/           底部标签栏切页（对话/电台/棋盘，body[data-page]
 ```
 
 ## .env 变量（只写名字）
-ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, TTS_MODEL(默认 eleven_flash_v2_5), TTS_MAX_CHARS(400), TTS_MONTHLY_CHARS(20000), TTS_SPEED(0.85)/TTS_STABILITY(0.35)/TTS_STYLE(0.3), TTS_CALL_ME(默认 Kay), TTS_TRANSLATE_TO(默认 English), CALL_MONTHLY_MINUTES(30), CALL_MAX_MINUTES(10), CALL_STT_MODEL(scribe_v1，被拒绝时自动换 scribe_v2), PROACTIVE_EVERY_MIN(默认90), PUSH_CONTACT(可空), PORT/DB_PATH。空值要用 `||` 而不是 `??` 判断（compose 的 env_file 会把空行变成空字符串）。
+ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, TTS_MODEL(默认 eleven_flash_v2_5), TTS_MAX_CHARS(400), TTS_MONTHLY_CHARS(20000), TTS_SPEED(0.85)/TTS_STABILITY(0.35)/TTS_STYLE(0.3), TTS_CALL_ME(默认 Kay), TTS_TRANSLATE_TO(默认 English), TTS_PODCAST_MODEL(eleven_multilingual_v2)/POD_SPEED(0.95)/POD_STABILITY(0.45)/POD_STYLE(0.4), CALL_MONTHLY_MINUTES(30), CALL_MAX_MINUTES(10), CALL_STT_MODEL(scribe_v1，被拒绝时自动换 scribe_v2), PROACTIVE_EVERY_MIN(默认90), PUSH_CONTACT(可空), PORT/DB_PATH。空值要用 `||` 而不是 `??` 判断（compose 的 env_file 会把空行变成空字符串）。
 
 ## 部署
 服务器上：`cd ~/kkssddd && git pull && docker compose up -d --build`。数据在 `./data/`（chat.db + uploads）。设置页(⚙)里有 Memos/读书/设备/通知的连接状态行，启动日志有 `memory:`/`weread:`/`device events:` 行，排查先看这些。
@@ -52,7 +52,7 @@ ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_
 - 没装中文衬线字体，截图里衬线是回退字体，真机（iOS 宋体）才对。
 - Hono 自带 logger 会把问号后的参数（含设备口令）打进日志，所以用了自己的访问日志。
 
-- 语音：每条助手消息时间旁有喇叭按钮，点了才生成（不自动念）。她的 ElevenLabs 声音是英文的（中文她觉得尬），所以点喇叭时先用 Sonnet(低 effort) 把回复翻成英语再念（`speechText`，译文和音频都按文本缓存，TTS_TRANSLATE_TO=none 关掉）；聊天文字仍是中文。微播客已做（podcast.ts，真机效果待她反馈）。通话已做（前端在 app.js 末尾「通话」段：接通时在点击里先放静音解锁播放→getUserMedia→它先开口→VAD 听到停顿 1.1s 收尾→上传→回复→再听；点月亮可打断；离开页面/切后台自动挂断）。**iPhone PWA 上麦克风、回声、播放音量都没真机验证过**，是最可能出问题的地方。延迟约 5–8 秒/轮（识别+Claude+合成各一次，没做流式），要更像电话得改成流式。
+- 语音：每条助手消息时间旁有喇叭按钮，点了才生成（不自动念）。她的 ElevenLabs 声音是英文的（中文她觉得尬），所以点喇叭时先用 Sonnet(低 effort) 把回复翻成英语再念（`speechText`，译文和音频都按文本缓存，TTS_TRANSLATE_TO=none 关掉）；聊天文字仍是中文。电台已做（podcast.ts；电台页列表点一行展开中文稿，EN 稿只用来配音；她嫌过声音「中间太平、像故意压低」，所以去掉了翻译提示词里的「低声」，并换成更有表现力的模型+分段配音）。每期约 2500–3500 个英文字符，注意 TTS_MONTHLY_CHARS（默认 20000）。老的 kind=podcast 聊天消息没迁移，还留在聊天里。通话已做（前端在 app.js 末尾「通话」段：接通时在点击里先放静音解锁播放→getUserMedia→它先开口→VAD 听到停顿 1.1s 收尾→上传→回复→再听；点月亮可打断；离开页面/切后台自动挂断）。**iPhone PWA 上麦克风、回声、播放音量都没真机验证过**，是最可能出问题的地方。延迟约 5–8 秒/轮（识别+Claude+合成各一次，没做流式），要更像电话得改成流式。
 - **聊天记录曾每次更新都丢**：她服务器 `.env` 里有 `DB_PATH=data/chat.db`（是照着旧的 `.env.example` 抄的，现已改成注释），盖掉了 Dockerfile 的 `/data/chat.db`，库落在容器内部。已在 docker-compose.yml 的 environment 里写死 `DB_PATH: /data/chat.db`（environment 优先于 env_file），并帮她把当时的库拷到了 `./data/`。之后 `./data/chat.db` 应当持续存在。
 
 - **手机突然 TLS 打不开（"couldn't establish a secure connection"）**：服务器、容器、Funnel 都正常时，是她手机到 `ts.net` 公网入口这一段不通；在手机上装着并连上 Tailscale（VPN 开）就好，删掉 app 后就坏。结论：她的手机需要保持 Tailscale 开着，快捷指令也一样。想彻底摆脱，换一个不依赖 ts.net 的入口（自己的域名 + Caddy 直接放在 Vultr 公网 IP 上，或 Cloudflare Tunnel）。

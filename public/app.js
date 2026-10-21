@@ -351,7 +351,8 @@ function toggleSpeak(btn, id, meta) {
   const was = speaking?.btn === btn;
   stopSpeaking();
   if (was) return;
-  const audio = new Audio("/api/tts/" + id);
+  const url = meta?.url ?? "/api/tts/" + id;
+  const audio = new Audio(url);
   speaking = { btn, audio };
   btn.classList.add("on", "loading");
   const title = meta?.title ?? "";
@@ -361,7 +362,7 @@ function toggleSpeak(btn, id, meta) {
   audio.addEventListener("error", async () => {
     if (speaking?.audio !== audio) return;
     stopSpeaking();
-    const r = await fetch("/api/tts/" + id).catch(() => null);
+    const r = await fetch(url).catch(() => null);
     toast((await r?.json().catch(() => null))?.error || "语音播放失败");
   });
   audio.play().catch((e) => {
@@ -653,42 +654,73 @@ function deckSet(title, cur, total) {
 const plain = (t) => t.replace(/[*_`#>~\[\]]/g, "").replace(/\s+/g, " ").trim();
 const firstLine = (t) => { const s = plain(t); const m = s.match(/^.{6,34}?[。！？.!?…]/); return m ? m[0] : s.slice(0, 30); };
 
+let epTimer = null;
+let epWant = null; // 刚点了「来一期」的那一期：做好后自动播
+const epLabel = { writing: "写稿中…", voicing: "配音中…" };
+
 async function loadEpisodes() {
   const list = $("episodes");
   let eps;
   try { eps = (await api("/podcasts")).episodes; } catch { return; }
-  list.replaceChildren(...eps.map((e, i) => {
-    const li = document.createElement("li");
-    li.className = "ep";
-    const d = new Date(e.created_at);
-    const when = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    const title = firstLine(e.content);
-    li.innerHTML = `<span class="ep-no">${String(eps.length - i).padStart(2, "0")}</span><div class="ep-body"><div class="ep-title"></div><div class="ep-meta">${when}</div></div>`;
-    li.querySelector(".ep-title").textContent = title;
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "ep-play";
-    btn.ariaLabel = "播放";
-    btn.innerHTML = SPEAK_ICON;
-    btn.onclick = (ev) => { ev.stopPropagation(); toggleSpeak(btn, e.id, { title: `${String(eps.length - i).padStart(2, "0")} ${title}` }); };
-    li.onclick = () => btn.click();
-    li.append(btn);
-    return li;
-  }));
+  const open = new Set([...list.querySelectorAll(".ep.open")].map((li) => li.dataset.id)); // 刷新时保持展开状态
+  list.replaceChildren(...eps.map((e, i) => episodeRow(e, eps.length - i, open.has(String(e.id)))));
   if (!eps.length) list.innerHTML = '<li class="ep-empty">还没有。点「来一期」。</li>';
+
+  const pending = eps.some((e) => e.status === "writing" || e.status === "voicing");
+  if (pending && !epTimer) epTimer = setInterval(() => document.body.dataset.page === "radio" ? loadEpisodes() : null, 3000);
+  if (!pending && epTimer) { clearInterval(epTimer); epTimer = null; }
+  const ready = epWant && eps.find((e) => e.id === epWant && e.status === "ready");
+  if (ready) {
+    epWant = null;
+    setStatus("pod-status", "");
+    list.querySelector(`.ep[data-id="${ready.id}"] .ep-play`)?.click(); // 尽量直接播；iPhone 拦了会提示点一下
+  }
+  const failed = epWant && eps.find((e) => e.id === epWant && e.status === "failed");
+  if (failed) { epWant = null; setStatus("pod-status", "这期没做成：" + (failed.error || "未知原因"), true); }
+}
+
+function episodeRow(e, no, open) {
+  const li = document.createElement("li");
+  li.className = "ep" + (open ? " open" : "");
+  li.dataset.id = e.id;
+  const d = new Date(e.created_at);
+  const when = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const num = String(no).padStart(2, "0");
+  const ready = e.status === "ready";
+  const head = document.createElement("div");
+  head.className = "ep-head";
+  head.innerHTML = `<span class="ep-no">${num}</span><div class="ep-body"><div class="ep-title"></div><div class="ep-meta"></div></div>`;
+  head.querySelector(".ep-title").textContent = e.title || epLabel[e.status] || "没做成";
+  head.querySelector(".ep-meta").textContent = e.status === "failed" ? e.error || "" : ready ? `${when}${e.title_en ? " · " + e.title_en : ""}` : `${when} · ${epLabel[e.status] ?? ""}`;
+  li.classList.toggle("pending", !ready && e.status !== "failed");
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ep-play";
+  btn.ariaLabel = "播放";
+  btn.innerHTML = SPEAK_ICON;
+  btn.disabled = !ready;
+  btn.onclick = (ev) => { ev.stopPropagation(); toggleSpeak(btn, e.id, { url: `/api/podcast/${e.id}/audio`, title: `${num} ${e.title_en || e.title}` }); };
+  head.append(btn);
+  li.append(head);
+  if (e.zh) {
+    const text = document.createElement("div");
+    text.className = "ep-text";
+    for (const para of e.zh.split(/\n{2,}/)) { const p = document.createElement("p"); p.textContent = para.trim(); text.append(p); }
+    li.append(text);
+    head.onclick = () => li.classList.toggle("open"); // 点一下展开/收起文字
+  }
+  return li;
 }
 
 $("pod-run").onclick = async () => {
   const btn = $("pod-run");
   btn.disabled = true;
-  setStatus("pod-status", "写稿中，大概十几秒…");
+  setStatus("pod-status", "开始了。写稿加配音大概要一两分钟，可以先去干别的，做好会出现在下面。");
   try {
-    await api("/podcast", { method: "POST", body: { topic: $("pod-topic").value.trim() } });
-    setStatus("pod-status", "");
+    const r = await api("/podcast", { method: "POST", body: { topic: $("pod-topic").value.trim() } });
+    epWant = r.id;
+    $("pod-topic").value = "";
     await loadEpisodes();
-    refreshThread(true);
-    // 尽量直接播；iPhone 如果拦了，会提示点一下
-    document.querySelector("#episodes .ep-play")?.click();
   } catch (err) { setStatus("pod-status", "失败：" + err.message, true); }
   btn.disabled = false;
 };

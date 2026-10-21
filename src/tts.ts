@@ -22,8 +22,22 @@ const voiceSettings = {
   similarity_boost: 0.75,
   style: num(process.env.TTS_STYLE, 0.3, 0, 1),
 };
+
+export interface Voice { model: string; settings: Record<string, unknown> }
+export const chatVoice: Voice = { model, settings: voiceSettings };
+// 电台节目的声线：用更有表现力的模型，稳定度适中、起伏更大，语速接近正常。可用 POD_* 环境变量调
+export const podcastVoice: Voice = {
+  model: process.env.TTS_PODCAST_MODEL || "eleven_multilingual_v2",
+  settings: {
+    speed: num(process.env.POD_SPEED, 0.95, 0.7, 1.2),
+    stability: num(process.env.POD_STABILITY, 0.45, 0, 1),
+    similarity_boost: 0.75,
+    style: num(process.env.POD_STYLE, 0.4, 0, 1),
+    use_speaker_boost: true,
+  },
+};
 const callMe = process.env.TTS_CALL_ME || "Kay"; // 英文里怎么称呼她
-const PROMPT_VERSION = "v3"; // 改了翻译提示词就加一，旧译文缓存自动作废
+const PROMPT_VERSION = "v4"; // 改了翻译提示词就加一，旧译文缓存自动作废
 
 export const ttsEnabled = Boolean(key && voice);
 
@@ -93,10 +107,10 @@ export const ttsUsage = () => ({ used: used(), limit: MONTHLY_CHARS });
 
 const inflight = new Map<string, Promise<Buffer>>();
 
-/** 返回 mp3；缓存命中不花钱 */
-export async function synthesize(text: string): Promise<Buffer> {
+/** 返回 mp3；缓存命中不花钱。ctx 是前后文，长文分段时用来让语气衔接 */
+export async function synthesize(text: string, v: Voice = chatVoice, ctx: { previous?: string; next?: string } = {}): Promise<Buffer> {
   if (!ttsEnabled) throw new TtsError("还没配置语音");
-  const name = createHash("sha256").update(`${model}|${voice}|${JSON.stringify(voiceSettings)}|${text}`).digest("hex").slice(0, 32) + ".mp3";
+  const name = createHash("sha256").update(`${v.model}|${voice}|${JSON.stringify(v.settings)}|${text}`).digest("hex").slice(0, 32) + ".mp3";
   const file = join(dir, name);
   if (existsSync(file)) return readFileSync(file);
   const pending = inflight.get(name);
@@ -110,8 +124,14 @@ export async function synthesize(text: string): Promise<Buffer> {
       {
         method: "POST",
         headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
-        body: JSON.stringify({ text, model_id: model, voice_settings: voiceSettings }),
-        signal: AbortSignal.timeout(45_000),
+        body: JSON.stringify({
+          text,
+          model_id: v.model,
+          voice_settings: v.settings,
+          ...(ctx.previous ? { previous_text: ctx.previous } : {}),
+          ...(ctx.next ? { next_text: ctx.next } : {}),
+        }),
+        signal: AbortSignal.timeout(60_000),
       },
     );
     if (!res.ok) {
@@ -122,9 +142,42 @@ export async function synthesize(text: string): Promise<Buffer> {
     const buf = Buffer.from(await res.arrayBuffer());
     writeFileSync(file, buf);
     addUsed(text.length);
-    console.log(`usage: tts ${model} chars=${text.length} month_total=${used()}/${MONTHLY_CHARS}`);
+    console.log(`usage: tts ${v.model} chars=${text.length} month_total=${used()}/${MONTHLY_CHARS}`);
     return buf;
   })().finally(() => inflight.delete(name));
   inflight.set(name, job);
   return job;
+}
+
+/** 把长文按段落切成一块一块（每块不超过 max 字），尽量在段落、再在句子处断开 */
+export function chunkText(text: string, max = 900): string[] {
+  const out: string[] = [];
+  let cur = "";
+  const push = () => { if (cur.trim()) out.push(cur.trim()); cur = ""; };
+  for (const para of text.split(/\n{2,}/)) {
+    const pieces = para.length <= max ? [para] : para.split(/(?<=[.!?。！？])\s+/);
+    for (const piece of pieces) {
+      if (cur && cur.length + piece.length + 2 > max) push();
+      cur += (cur ? "\n\n" : "") + piece;
+    }
+  }
+  push();
+  return out;
+}
+
+/** 长文配音：分块合成再拼起来，每块带上前后文让语气接得上；整段结果也缓存 */
+export async function synthesizeLong(text: string, v: Voice = podcastVoice): Promise<Buffer> {
+  if (!ttsEnabled) throw new TtsError("还没配置语音");
+  const whole = join(dir, "ep-" + createHash("sha256").update(`${v.model}|${voice}|${JSON.stringify(v.settings)}|${text}`).digest("hex").slice(0, 32) + ".mp3");
+  if (existsSync(whole)) return readFileSync(whole);
+  if (used() + text.length > MONTHLY_CHARS)
+    throw new TtsError(`这个月的语音额度不够做这一期了（已用 ${used()}/${MONTHLY_CHARS} 字，这期要约 ${text.length} 字）`);
+  const chunks = chunkText(text);
+  const bufs: Buffer[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    bufs.push(await synthesize(chunks[i], v, { previous: chunks[i - 1]?.slice(-300), next: chunks[i + 1]?.slice(0, 300) }));
+  }
+  const all = Buffer.concat(bufs);
+  writeFileSync(whole, all);
+  return all;
 }

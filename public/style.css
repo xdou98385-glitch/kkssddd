@@ -210,14 +210,21 @@ body[data-page="board"] :is(#messages, #attachments) { display: none; }
 .radio-make button { padding: 9px 16px; border-radius: 10px; background: var(--surface); border: 1px solid var(--hairline); box-shadow: inset 0 1px 0 var(--edge); color: var(--text); font: 500 13px/1.5 var(--sans); letter-spacing: 0.12em; }
 #radio .memory-status { margin: 8px 0 6px; min-height: 1em; }
 #episodes { list-style: none; margin: 8px 0 0; padding: 0; }
-.ep { display: flex; align-items: center; gap: 14px; padding: 15px 2px; border-top: 1px solid var(--hairline); cursor: pointer; }
+.ep { border-top: 1px solid var(--hairline); }
+.ep-head { display: flex; align-items: center; gap: 14px; padding: 15px 2px; cursor: pointer; }
+.ep.pending .ep-title, .ep.pending .ep-meta { opacity: 0.6; }
+.ep.pending .ep-meta { animation: speak-pulse 1.6s ease-in-out infinite; }
 .ep-no { flex: none; width: 2.2em; font: 11px/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em; color: var(--muted); }
 .ep-body { flex: 1; min-width: 0; }
-.ep-title { font: 15.5px/1.65 var(--serif); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.ep-meta { margin-top: 3px; font: 11px/1 var(--sans); letter-spacing: 0.08em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ep-title { font: 15.5px/1.65 var(--serif); }
+.ep-meta { margin-top: 3px; font: 11px/1.4 var(--sans); letter-spacing: 0.08em; color: var(--muted); font-variant-numeric: tabular-nums; }
 .ep-play { flex: none; display: inline-flex; padding: 8px; border: 0; background: none; color: var(--muted); }
+.ep-play:disabled { opacity: 0.3; }
 .ep-play.on { color: var(--text); }
 .ep-play.loading { animation: speak-pulse 1s ease-in-out infinite; }
+.ep-text { display: none; padding: 0 2px 18px 2.2em; margin-left: 14px; font: 15px/1.95 var(--serif); }
+.ep.open .ep-text { display: block; }
+.ep-text p { margin: 0 0 0.9em; }
 .ep-empty { padding: 28px 0; text-align: center; color: var(--muted); font: italic 14px var(--serif); letter-spacing: 0.1em; }
 
 /* ---- 通话：黑屏、月亮、一个按钮 ---- */

@@ -16,9 +16,9 @@ import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
-import { makePodcast } from "./podcast.ts";
+import { startPodcast } from "./podcast.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
-import { TtsError, speechText, synthesize, ttsEnabled } from "./tts.ts";
+import { TtsError, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
@@ -256,7 +256,7 @@ app.post("/api/thread/regenerate", (c) => {
   return replyStream(c, conv, db.takeMessage(id));
 });
 
-app.get("/api/podcasts", (c) => c.json({ episodes: db.podcasts(thread().id, 40) }));
+app.get("/api/podcasts", (c) => c.json({ episodes: db.listEpisodes(40).map(({ en: _en, ...e }) => e) }));
 
 // 通话：一轮 = 上传她说的一段录音（或 X-Call-Start 表示刚接通）→ 识别 → Claude 回 → 返回文字，音频走 /api/tts/:id
 app.post("/api/call/turn", bodyLimit({ maxSize: 8 * 1024 * 1024, onError: (c) => c.json({ error: "录音太大" }, 413) }), async (c) => {
@@ -278,9 +278,35 @@ app.post("/api/call/turn", bodyLimit({ maxSize: 8 * 1024 * 1024, onError: (c) =>
 app.post("/api/podcast", async (c) => {
   if (!ttsEnabled) return c.json({ error: "还没配置语音" }, 400);
   const body = await c.req.json<{ topic?: string }>().catch(() => ({}) as { topic?: string });
-  const r = await makePodcast(String(body.topic ?? ""));
-  return "error" in r ? c.json(r, 500) : c.json(r);
+  const r = startPodcast(String(body.topic ?? ""));
+  return "error" in r ? c.json(r, 409) : c.json(r);
 });
+
+// 一期节目的音频（支持 Range）。正常情况下配音早就做完了，这里是缓存命中
+app.get("/api/podcast/:id/audio", async (c) => {
+  const ep = db.getEpisode(Number(c.req.param("id")));
+  if (!ep || ep.status !== "ready" || !ep.en) return c.json({ error: "这期还没做好" }, 404);
+  try {
+    return sendAudio(c, await synthesizeLong(ep.en, podcastVoice));
+  } catch (err) {
+    if (!(err instanceof TtsError)) console.error("podcast audio:", err);
+    return c.json({ error: err instanceof TtsError ? err.message : "语音生成失败" }, 502);
+  }
+});
+
+// 回一段 mp3，支持 Range（iPhone 的 <audio> 要求）
+function sendAudio(c: Context, audio: Buffer) {
+  const size = audio.length;
+  const headers = { "Content-Type": "audio/mpeg", "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=31536000" };
+  const m = /^bytes=(\d*)-(\d*)$/.exec(c.req.header("range") ?? "");
+  if (m && (m[1] || m[2])) {
+    const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+    const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+    if (start >= size || start > end) return c.body(null, 416, { "Content-Range": `bytes */${size}` });
+    return c.body(new Uint8Array(audio.subarray(start, end + 1)), 206, { ...headers, "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(end - start + 1) });
+  }
+  return c.body(new Uint8Array(audio), 200, { ...headers, "Content-Length": String(size) });
+}
 
 // 把一条助手消息念出来。用 GET + 支持 Range，iPhone 的 <audio> 才肯播
 app.get("/api/tts/:id", async (c) => {
@@ -295,16 +321,7 @@ app.get("/api/tts/:id", async (c) => {
     if (!(err instanceof TtsError)) console.error("tts:", err);
     return c.json({ error: err instanceof TtsError ? err.message : "语音生成失败" }, err instanceof TtsError ? 429 : 502);
   }
-  const size = audio.length;
-  const headers = { "Content-Type": "audio/mpeg", "Accept-Ranges": "bytes", "Cache-Control": "private, max-age=31536000" };
-  const m = /^bytes=(\d*)-(\d*)$/.exec(c.req.header("range") ?? "");
-  if (m && (m[1] || m[2])) {
-    const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
-    const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
-    if (start >= size || start > end) return c.body(null, 416, { "Content-Range": `bytes */${size}` });
-    return c.body(new Uint8Array(audio.subarray(start, end + 1)), 206, { ...headers, "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": String(end - start + 1) });
-  }
-  return c.body(new Uint8Array(audio), 200, { ...headers, "Content-Length": String(size) });
+  return sendAudio(c, audio);
 });
 
 app.use("*", serveStatic({ root: "public" }));
