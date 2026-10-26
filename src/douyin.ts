@@ -1,5 +1,5 @@
-// 抖音（只读）：调旁边的 douyin 小服务（见 douyin/ 目录，基于 cv-cat/DouYin_Spider）。
-// 只做「看」：推荐流、搜索、一个作品的详情和热门评论、她点过赞的视频。点赞、评论、私信、发布都没接。
+// 抖音：调旁边的 douyin 小服务（见 douyin/ 目录，基于 cv-cat/DouYin_Spider）。
+// 默认只读。设置里「允许代我操作」填 on 后可点赞/收藏；发私信永远只起草，她点确认才发。发评论、发布作品没接。
 // cookie 存在设置页「连接」里（只写不读），每次请求时带给小服务，小服务自己不存。
 import * as db from "./db.ts";
 import { cfg, onConfigChange } from "./config.ts";
@@ -142,6 +142,94 @@ export async function dyWork(ref: string): Promise<string> {
     cs.length ? "热门评论：" : "（没取到评论）",
     ...cs.map((c) => `- ${c.user ?? "?"}：${String(c.text ?? "").slice(0, 160)}（赞 ${c.digg ?? 0}${c.replies ? `，${c.replies} 条回复` : ""}）`),
   ].filter(Boolean).join("\n");
+}
+
+// ---- 更多只读 ----
+type User = { uid?: string | number; sec_uid?: string; nickname?: string; signature?: string; followers?: number };
+const userLines = (us: User[] | undefined) =>
+  us?.length ? us.map((u, i) => `${i + 1}. ${u.nickname || "?"} | uid=${u.uid}${u.followers != null ? ` | 粉丝 ${u.followers}` : ""}${u.signature ? ` | ${u.signature.replace(/\s+/g, " ")}` : ""}`).join("\n") : "（没有）";
+
+export async function dyFollowers(): Promise<string> {
+  return "关注她的人：\n" + userLines((await call("/followers", { count: 20 })).items);
+}
+export async function dyFollowing(): Promise<string> {
+  return "她关注的人：\n" + userLines((await call("/following", { count: 20 })).items);
+}
+export async function dyCollects(): Promise<string> {
+  const d = await call("/collects");
+  const items = d.items as { name?: string; count?: number }[];
+  if (!items?.length) return `没读到收藏夹${d.keys ? `（接口字段：${d.keys.join(",")}）` : ""}`;
+  return "她的收藏夹（只能看到夹子名字和数量，看不到里面具体是什么）：\n" + items.map((c) => `- ${c.name}${c.count != null ? `（${c.count} 个）` : ""}`).join("\n");
+}
+export async function dyNotices(group: string): Promise<string> {
+  const d = await call("/notices", { group, count: 15 });
+  const items = d.items as { time?: number; text?: string }[];
+  if (!items?.length) return "没有通知";
+  return `她的抖音通知（${group}）：\n` + items.map((n) => `- ${n.time ? new Date(n.time * 1000).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }) + " " : ""}${n.text}`).join("\n");
+}
+export async function dyComments(ref: string, withReplies: boolean): Promise<string> {
+  const id = await resolveWorkRef(ref);
+  const d = await call("/comments", { id, count: 15, with_replies: withReplies });
+  const items = d.items as { user?: string; text?: string; digg?: number; replies_total?: number; replies?: { user?: string; text?: string }[] }[];
+  if (!items?.length) return "没取到评论";
+  return items
+    .map((c) => [`- ${c.user ?? "?"}：${String(c.text ?? "").slice(0, 200)}（赞 ${c.digg ?? 0}${c.replies_total ? `，${c.replies_total} 条回复` : ""}）`, ...(c.replies ?? []).map((r) => `    ↳ ${r.user ?? "?"}：${String(r.text ?? "").slice(0, 120)}`)].join("\n"))
+    .join("\n");
+}
+/** 听一小会儿新私信：只收这段时间进来的，看不到历史 */
+export async function dyDmListen(seconds: number): Promise<string> {
+  const d = await call("/dm_recv", { seconds });
+  const items = d.items as { from?: string | number; text?: string }[];
+  return items?.length
+    ? `听了 ${d.listened} 秒，收到：\n` + items.map((m) => `- 来自 ${m.from}：${m.text}`).join("\n")
+    : `听了 ${d.listened} 秒，没有新私信（接口只推送这段时间进来的，看不到历史私信）`;
+}
+
+// ---- 写操作 ----
+export const douyinActionsOn = () => cfg("DOUYIN_ACTIONS").trim().toLowerCase() === "on";
+const WRITE_DAILY = Math.max(1, Number(process.env.DOUYIN_WRITE_DAILY || 30) || 30);
+function writeGuard(): void {
+  if (!douyinActionsOn()) throw new DouyinError("设置里没打开「允许代我操作」，所以不能点赞/收藏/发私信");
+  let u: { day?: string; n?: number } = {};
+  try { u = JSON.parse(db.getSetting("douyin_writes") || "{}"); } catch { /* 忽略 */ }
+  const n = u.day === day() ? Number(u.n) || 0 : 0;
+  if (n >= WRITE_DAILY) throw new DouyinError(`今天代她做的操作已经到上限了（${WRITE_DAILY} 次）`);
+  db.setSetting("douyin_writes", JSON.stringify({ day: day(), n: n + 1 }));
+}
+export async function dyLike(ref: string, undo: boolean): Promise<string> {
+  writeGuard();
+  await call("/digg", { id: await resolveWorkRef(ref), undo });
+  return undo ? "已取消点赞" : "已点赞";
+}
+export async function dyCollect(ref: string, undo: boolean): Promise<string> {
+  writeGuard();
+  await call("/collect", { id: await resolveWorkRef(ref), undo });
+  return undo ? "已取消收藏" : "已收藏";
+}
+/** 私信只起草：存起来等她在聊天里确认，不会直接发 */
+export function dyDmDraft(toUid: string, toName: string, text: string): string {
+  if (!douyinActionsOn()) throw new DouyinError("设置里没打开「允许代我操作」，所以不能发私信");
+  if (!/^\d{5,}$/.test(toUid)) throw new DouyinError("to_uid 要是纯数字的用户 uid（从关注/粉丝列表里拿）");
+  const t = text.trim().slice(0, 500);
+  if (!t) throw new DouyinError("私信内容是空的");
+  const id = db.addPending("dy_dm", `发私信给「${toName || toUid}」：${t}`, { to_uid: toUid, text: t });
+  return `已起草，等她在聊天界面点「发送」确认后才会真发出去（草稿 #${id}）。别说已经发了。`;
+}
+export async function runPending(id: number): Promise<string> {
+  const p = db.getPending(id);
+  if (!p || p.status !== "pending") throw new DouyinError("这条草稿已经处理过了");
+  if (p.kind !== "dy_dm") throw new DouyinError("不认识的草稿类型");
+  const { to_uid, text } = JSON.parse(p.payload) as { to_uid: string; text: string };
+  writeGuard();
+  db.setPendingStatus(id, "sending");
+  try {
+    await call("/dm_send", { to_uid, text });
+  } catch (err) {
+    db.setPendingStatus(id, "pending"); // 失败了留着，她可以再试或丢掉
+    throw err;
+  }
+  db.setPendingStatus(id, "done");
+  return "私信已发送";
 }
 
 // ---- 设置页用 ----

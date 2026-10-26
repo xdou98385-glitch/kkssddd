@@ -132,6 +132,14 @@ header h1 { flex: 1; margin: 0; text-align: center; font: 500 17px/1 var(--serif
 /* ---- 输入区：悬浮的玻璃胶囊 ---- */
 #attachments { display: flex; gap: 10px; padding: 6px 20px 10px; overflow-x: auto; }
 #attachments:empty { display: none; }
+#pending:empty { display: none; }
+#pending { padding: 6px 20px 0; display: grid; gap: 8px; }
+.pending-card { border: 1px solid var(--hairline); border-radius: 12px; padding: 10px 12px; background: rgba(255,255,255,.08); backdrop-filter: blur(10px); font-size: 14px; }
+.pending-text { white-space: pre-wrap; word-break: break-word; }
+.pending-msg { color: #c0564a; font-size: 12px; margin-top: 4px; }
+.pending-msg:empty { display: none; }
+.pending-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; }
+.pending-row button { border: 1px solid currentColor; border-radius: 8px; padding: 4px 14px; background: none; color: inherit; font: inherit; font-size: 13px; }
 .chip { position: relative; flex: none; }
 .chip img { width: 62px; height: 62px; object-fit: cover; border-radius: 14px; display: block; box-shadow: 0 8px 18px -10px var(--shadow); }
 .chip.loading img { opacity: 0.4; }
@@ -197,7 +205,7 @@ dialog button.primary { background: var(--ink); color: var(--ink-text); border-c
 .conn-qr { width: 190px; height: 190px; justify-self: start; border-radius: 12px; background: #fff; padding: 6px; image-rendering: pixelated; }
 
 /* ---- 页面切换 ---- */
-body[data-page="radio"] :is(#messages, #attachments, #composer),
+body[data-page="radio"] :is(#messages, #attachments, #pending, #composer),
 body[data-page="call"] :is(#messages, #attachments, #composer),
 body[data-page="board"] :is(#messages, #attachments) { display: none; }
 

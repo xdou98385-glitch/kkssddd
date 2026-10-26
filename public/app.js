@@ -80,6 +80,14 @@ const TOOL_LABELS = {
   dy_search: "搜了抖音",
   dy_work: "点开了一条抖音",
   dy_likes: "翻了翻她点赞过的抖音",
+  dy_comments: "翻了翻抖音评论区",
+  dy_people: "看了她抖音的关注/粉丝",
+  dy_collects: "翻了翻她的抖音收藏夹",
+  dy_notices: "看了她的抖音通知",
+  dy_dm_listen: "听了听抖音私信",
+  dy_like: "给一条抖音点了赞",
+  dy_collect: "收藏了一条抖音",
+  dy_dm_draft: "起草了一条抖音私信，等她确认",
   xhs_search: "搜了小红书",
   xhs_feed: "刷了眼小红书推荐",
   xhs_note: "点开了一条小红书笔记",
@@ -319,6 +327,7 @@ async function runReply(url, payload) {
       scrollDown();
     }
     setBusy(false);
+    loadPending();
     if (game.open) gameLoad();
     // 这是第一条消息：重新加载一次，拿到数据库里的 id 才能往前翻页
     if (!failed) await syncIds();
@@ -1245,3 +1254,37 @@ document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => setP
 document.body.dataset.page = "chat";
 const startPage = location.hash.slice(1);
 if (startPage === "board") setPage("board"); // 电台要等知道语音有没有开，loadThread 之后再切
+
+
+// ---- 待确认的操作（Claude 起草的私信等）：她点了才真执行 ----
+async function loadPending() {
+  const box = $("pending");
+  if (!box) return;
+  let list = [];
+  try { list = (await api("/actions")).actions || []; } catch { return; }
+  box.replaceChildren(...list.map((a) => {
+    const card = document.createElement("div");
+    card.className = "pending-card";
+    const t = document.createElement("div");
+    t.className = "pending-text";
+    t.textContent = a.summary;
+    const ok = document.createElement("button");
+    ok.type = "button"; ok.textContent = "发送";
+    const no = document.createElement("button");
+    no.type = "button"; no.textContent = "丢掉"; no.className = "flat";
+    const msg = document.createElement("div");
+    msg.className = "pending-msg";
+    ok.onclick = async () => {
+      ok.disabled = no.disabled = true; msg.textContent = "发送中…";
+      try { await api(`/actions/${a.id}/confirm`, { method: "POST" }); card.remove(); }
+      catch (err) { msg.textContent = "没发出去：" + err.message; ok.disabled = no.disabled = false; }
+    };
+    no.onclick = async () => { await api(`/actions/${a.id}/discard`, { method: "POST" }).catch(() => {}); card.remove(); };
+    const row = document.createElement("div");
+    row.className = "pending-row";
+    row.append(no, ok);
+    card.append(t, msg, row);
+    return card;
+  }));
+}
+loadPending();

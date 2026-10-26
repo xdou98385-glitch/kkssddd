@@ -20,7 +20,7 @@ import { startPodcast } from "./podcast.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
 import { xhsQrcode, xhsStatus } from "./xhs.ts";
 import { recordShare } from "./share.ts";
-import { douyinProbe, douyinStatus } from "./douyin.ts";
+import { douyinProbe, douyinStatus, runPending } from "./douyin.ts";
 import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
 import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
@@ -283,6 +283,20 @@ app.post("/api/thread/regenerate", (c) => {
 });
 
 app.get("/api/podcasts", async (c) => c.json({ episodes: db.listEpisodes(40).map(({ en: _en, ...e }) => e), quota: await elevenQuota() }));
+
+// ---- 待她确认的操作（比如 Claude 起草的抖音私信）----
+app.get("/api/actions", (c) => c.json({ actions: db.listPending().map((a) => ({ id: a.id, summary: a.summary })) }));
+app.post("/api/actions/:id/confirm", async (c) => {
+  try {
+    return c.json({ ok: true, message: await runPending(Number(c.req.param("id"))) });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+app.post("/api/actions/:id/discard", (c) => {
+  db.setPendingStatus(Number(c.req.param("id")), "discarded");
+  return c.json({ ok: true });
+});
 
 // ---- 设置页的「连接」：填 API key、地址，保存并测试 ----
 app.get("/api/connections", (c) => c.json({ groups: describeGroups() }));

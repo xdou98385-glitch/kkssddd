@@ -42,6 +42,14 @@ db.exec(`
     detail TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
+  CREATE TABLE IF NOT EXISTS pending_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+  );
   CREATE TABLE IF NOT EXISTS shares (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at INTEGER NOT NULL,
@@ -259,6 +267,14 @@ export function addShare(s: Omit<Share, "id" | "at">): number {
 }
 export const recentShares = (limit: number, since = 0) =>
   db.prepare("SELECT * FROM shares WHERE at >= ? ORDER BY id DESC LIMIT ?").all(since, limit) as Share[];
+
+// ---- 待她确认的操作（Claude 起草，她点了才真执行）----
+export interface PendingAction { id: number; at: number; kind: string; summary: string; payload: string; status: string }
+export const addPending = (kind: string, summary: string, payload: unknown): number =>
+  Number(db.prepare("INSERT INTO pending_actions (at, kind, summary, payload) VALUES (?, ?, ?, ?)").run(now(), kind, summary, JSON.stringify(payload)).lastInsertRowid);
+export const listPending = () => db.prepare("SELECT * FROM pending_actions WHERE status = 'pending' ORDER BY id").all() as PendingAction[];
+export const getPending = (id: number) => db.prepare("SELECT * FROM pending_actions WHERE id = ?").get(id) as PendingAction | undefined;
+export const setPendingStatus = (id: number, status: string) => void db.prepare("UPDATE pending_actions SET status = ? WHERE id = ?").run(status, id);
 
 // ---- 电台节目（独立存放，不进聊天记录）----
 export interface Episode {

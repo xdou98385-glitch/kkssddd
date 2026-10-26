@@ -3,7 +3,7 @@ import { coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
 import { activitySummary, deviceEnabled, userTz } from "./device.ts";
 import * as db from "./db.ts";
-import { douyinEnabled, dyFeed, dyLikes, dySearch, dyWork } from "./douyin.ts";
+import { douyinActionsOn, douyinEnabled, dyCollect, dyCollects, dyComments, dyDmDraft, dyDmListen, dyFeed, dyFollowers, dyFollowing, dyLike, dyLikes, dyNotices, dySearch, dyWork } from "./douyin.ts";
 import { XhsError, xhsEnabled, xhsFeed, xhsMe, xhsNote, xhsSearch } from "./xhs.ts";
 import { describeShares } from "./share.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
@@ -172,7 +172,7 @@ const deviceTool: Tool = {
   label: () => "看了眼她手机最近在干嘛",
 };
 
-// ---- 抖音（只读）----
+// ---- 抖音 ----
 const douyinTools: Tool[] = [
   {
     def: {
@@ -213,6 +213,90 @@ const douyinTools: Tool[] = [
     },
     run: () => dyLikes(),
     label: () => "翻了翻她点赞过的抖音",
+  },
+  {
+    def: {
+      name: "dy_comments",
+      description: "读一条抖音的评论区（比 dy_work 多：最多 15 条，可带热门评论下的回复）。ref 是作品 id 或抖音链接。",
+      strict: true,
+      input_schema: { type: "object", properties: { ref: { type: "string", description: "作品 id 或抖音链接" }, with_replies: { type: "boolean", description: "是否带上前几条评论的回复" } }, required: ["ref", "with_replies"], additionalProperties: false },
+    },
+    run: (input) => dyComments(String(input.ref ?? ""), !!input.with_replies),
+    label: () => "翻了翻抖音评论区",
+  },
+  {
+    def: {
+      name: "dy_people",
+      description: "看她抖音的关注列表或粉丝列表（带 uid，发私信要用）。",
+      strict: true,
+      input_schema: { type: "object", properties: { which: { type: "string", enum: ["following", "followers"] } }, required: ["which"], additionalProperties: false },
+    },
+    run: (input) => (input.which === "followers" ? dyFollowers() : dyFollowing()),
+    label: (input) => (input.which === "followers" ? "看了她的抖音粉丝" : "看了她关注的人"),
+  },
+  {
+    def: {
+      name: "dy_collects",
+      description: "看她抖音的收藏夹列表（夹子名字和数量，看不到里面的内容）。",
+      strict: true,
+      input_schema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    run: () => dyCollects(),
+    label: () => "翻了翻她的抖音收藏夹",
+  },
+  {
+    def: {
+      name: "dy_notices",
+      description: "看她抖音的通知：谁点赞、评论、关注、@了她。",
+      strict: true,
+      input_schema: { type: "object", properties: { group: { type: "string", enum: ["全部", "粉丝", "艾特", "评论", "点赞"] } }, required: ["group"], additionalProperties: false },
+    },
+    run: (input) => dyNotices(String(input.group ?? "全部")),
+    label: () => "看了她的抖音通知",
+  },
+  {
+    def: {
+      name: "dy_dm_listen",
+      description: "连上抖音私信听一小会儿（默认 12 秒），收这段时间进来的新私信。只收新消息，看不到历史。",
+      strict: true,
+      input_schema: { type: "object", properties: { seconds: { type: "number", description: "3 到 30 秒" } }, required: ["seconds"], additionalProperties: false },
+    },
+    run: (input) => dyDmListen(Number(input.seconds) || 12),
+    label: () => "听了听抖音私信",
+  },
+];
+
+// 写操作：只有设置里打开「允许代我操作」才会出现
+const douyinWriteTools: Tool[] = [
+  {
+    def: {
+      name: "dy_like",
+      description: "给一条抖音点赞（或取消点赞），用的是她的账号。只在她明确说了要点赞，或你们刚聊到并她同意时用。",
+      strict: true,
+      input_schema: { type: "object", properties: { ref: { type: "string", description: "作品 id 或抖音链接" }, undo: { type: "boolean", description: "true = 取消点赞" } }, required: ["ref", "undo"], additionalProperties: false },
+    },
+    run: (input) => dyLike(String(input.ref ?? ""), !!input.undo),
+    label: (input) => (input.undo ? "取消了一个抖音点赞" : "给一条抖音点了赞"),
+  },
+  {
+    def: {
+      name: "dy_collect",
+      description: "收藏一条抖音（或取消收藏），用的是她的账号。只在她明确同意时用。",
+      strict: true,
+      input_schema: { type: "object", properties: { ref: { type: "string", description: "作品 id 或抖音链接" }, undo: { type: "boolean", description: "true = 取消收藏" } }, required: ["ref", "undo"], additionalProperties: false },
+    },
+    run: (input) => dyCollect(String(input.ref ?? ""), !!input.undo),
+    label: (input) => (input.undo ? "取消收藏了一条抖音" : "收藏了一条抖音"),
+  },
+  {
+    def: {
+      name: "dy_dm_draft",
+      description: "起草一条抖音私信。不会直接发：草稿出现在聊天界面，她点「发送」才真发。to_uid 用 dy_people 里的 uid。",
+      strict: true,
+      input_schema: { type: "object", properties: { to_uid: { type: "string", description: "对方纯数字 uid" }, to_name: { type: "string", description: "对方昵称，给她看的" }, text: { type: "string", description: "私信内容" } }, required: ["to_uid", "to_name", "text"], additionalProperties: false },
+    },
+    run: async (input) => dyDmDraft(String(input.to_uid ?? ""), String(input.to_name ?? ""), String(input.text ?? "")),
+    label: () => "起草了一条抖音私信，等她确认",
   },
 ];
 
@@ -306,6 +390,7 @@ export const getTools = (): Tool[] => [
   ...(deviceEnabled ? [deviceTool, shareTool] : []),
   ...(xhsEnabled ? xhsTools : []),
   ...(douyinEnabled ? douyinTools : []),
+  ...(douyinEnabled && douyinActionsOn() ? douyinWriteTools : []),
 ];
 export const findTool = (name: string) => getTools().find((t) => t.def.name === name);
 

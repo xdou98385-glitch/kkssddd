@@ -1,6 +1,7 @@
 """抖音（只读）小服务。把 cv-cat/DouYin_Spider 里「看」的那几个接口包成几个本机 HTTP 接口，给聊天网站的 Claude 用。
 
-- 只做读：推荐流、搜索、一个作品的详情 + 热门评论、她自己「喜欢」的列表。点赞/评论/私信/发布一概不接。
+- 读：推荐流、搜索、作品详情 + 评论、点赞列表、收藏夹、关注/粉丝、通知、听新私信。
+- 写（聊天网站那边有总开关和确认）：点赞、收藏、发私信。发评论要浏览器会话凭据、发布作品太重，没接。
 - cookie 不存在这里：每次请求由聊天网站带过来（只在本机回环地址上走），这个服务自己什么都不落盘。
 - 一次只处理一个请求（锁），避免短时间内连着打抖音。
 """
@@ -196,7 +197,159 @@ def likes(auth, body):
     return {"items": [brief(a) for a in awemes_from(d)][:n]}
 
 
-ROUTES = {"/whoami": whoami, "/feed": feed, "/search": search, "/work": work, "/likes": likes, "/probe": probe}
+# ---------- 更多只读 ----------
+def user_brief(u: dict) -> dict:
+    return {
+        "uid": u.get("uid"), "sec_uid": u.get("sec_uid"), "nickname": u.get("nickname"),
+        "signature": (u.get("signature") or "")[:80], "followers": u.get("follower_count"),
+        "works": u.get("aweme_count"),
+    }
+
+
+def _me(auth):
+    return str(DouyinAPI.get_my_uid(auth)), DouyinAPI.get_my_sec_uid(auth)
+
+
+def followers(auth, body):
+    n = max(1, min(int(body.get("count") or 20), 40))
+    uid, sec = _me(auth)
+    return {"items": [user_brief(u) for u in DouyinAPI.get_some_user_follower_list(auth, uid, sec, n)]}
+
+
+def following(auth, body):
+    n = max(1, min(int(body.get("count") or 20), 40))
+    uid, sec = _me(auth)
+    return {"items": [user_brief(u) for u in DouyinAPI.get_some_user_following_list(auth, uid, sec, n)]}
+
+
+def collects(auth, body):
+    d = DouyinAPI.get_collect_list(auth)
+    lst = d.get("collects_list") or d.get("collect_list") or []
+    return {"items": [{"id": c.get("collects_id"), "name": c.get("collects_name"), "count": c.get("item_total_number") or c.get("total_number")} for c in lst][:30],
+            "keys": sorted(d.keys())[:12] if not lst else None}
+
+
+def _flat_text(x, out, depth=0):
+    """通知的结构我没见过真的，递归捞出昵称和文字，捞不到就留原样"""
+    if depth > 4:
+        return
+    if isinstance(x, dict):
+        for k in ("nickname", "text", "content", "title", "desc"):
+            v = x.get(k)
+            if isinstance(v, str) and v.strip():
+                out.append(v.strip())
+        for v in x.values():
+            if isinstance(v, (dict, list)):
+                _flat_text(v, out, depth + 1)
+    elif isinstance(x, list):
+        for v in x[:5]:
+            _flat_text(v, out, depth + 1)
+
+
+def notices(auth, body):
+    n = max(1, min(int(body.get("count") or 15), 30))
+    group = {"全部": "700", "粉丝": "401", "艾特": "601", "评论": "2", "点赞": "3"}.get(str(body.get("group") or "全部"), "700")
+    items = []
+    for it in DouyinAPI.get_some_notice_list(auth, n, group):
+        parts: list = []
+        _flat_text(it, parts)
+        seen, uniq = set(), []
+        for t in parts:
+            if t not in seen:
+                seen.add(t)
+                uniq.append(t)
+        items.append({"type": it.get("type"), "time": it.get("create_time"), "text": " / ".join(uniq)[:200] or json.dumps(it, ensure_ascii=False)[:200]})
+    return {"items": items[:n]}
+
+
+def comments(auth, body):
+    ref = str(body.get("id") or "").strip()
+    if not ref:
+        raise ValueError("没有作品 id")
+    url = f"https://www.douyin.com/video/{ref}"
+    cd = DouyinAPI.get_work_out_comment(auth, url, str(body.get("cursor") or "0"))
+    out = []
+    for c in (cd.get("comments") or [])[: max(1, min(int(body.get("count") or 15), 30))]:
+        row = {"cid": c.get("cid"), "user": (c.get("user") or {}).get("nickname"), "text": c.get("text"),
+               "digg": c.get("digg_count"), "replies_total": c.get("reply_comment_total"), "replies": []}
+        if body.get("with_replies") and (c.get("reply_comment_total") or 0) > 0 and len([r for r in out if r["replies"]]) < 3:
+            try:
+                rd = DouyinAPI.get_work_inner_comment(auth, c, "0", "5")
+                row["replies"] = [{"user": (r.get("user") or {}).get("nickname"), "text": r.get("text")} for r in (rd.get("comments") or [])][:5]
+            except Exception as e:
+                row["replies"] = [{"user": None, "text": f"（回复没取到：{e}）"[:100]}]
+        out.append(row)
+    return {"items": out, "cursor": cd.get("cursor"), "has_more": cd.get("has_more")}
+
+
+# ---------- 轻量写：点赞 / 收藏 ----------
+def digg(auth, body):
+    ok = DouyinAPI.digg(auth, str(body["id"]), "0" if body.get("undo") else "1")
+    if not ok:
+        raise RuntimeError("抖音没接受这次点赞（status_code 非 0）")
+    return {"done": True}
+
+
+def collect(auth, body):
+    d = DouyinAPI.collect_aweme(auth, str(body["id"]), "0" if body.get("undo") else "1")
+    if d.get("status_code") != 0:
+        raise RuntimeError(f"抖音没接受这次收藏（status_code={d.get('status_code')}）")
+    return {"done": True}
+
+
+# ---------- 私信 ----------
+def dm_send(auth, body):
+    to = int(body["to_uid"])
+    text = str(body["text"]).strip()
+    if not text:
+        raise ValueError("私信内容是空的")
+    cid, short_id, ticket = DouyinAPI.create_conversation(auth, to)
+    if not DouyinAPI.send_msg(auth, cid, short_id, ticket, text):
+        raise RuntimeError("私信发送没成功（抖音没回 OK，详见 docker compose logs douyin）")
+    return {"done": True}
+
+
+def dm_recv(auth, body):
+    """连上私信的 WebSocket 听一小会儿，收这段时间进来的新私信（接口只推送，看不到历史）"""
+    import websocket as _ws
+    from dy_apis.douyin_recv_msg import DouyinRecvMsg
+    from static import Live_pb2, Response_pb2
+
+    secs = max(3, min(int(body.get("seconds") or 12), 30))
+    got: list = []
+    rm = DouyinRecvMsg(auth, auto_reconnect=False)
+
+    def on_message(ws, message):
+        try:
+            frame = Live_pb2.PushFrame()
+            frame.ParseFromString(message)
+            if frame.payloadType != "pb":
+                return
+            resp = Response_pb2.Response()
+            resp.ParseFromString(frame.payload)
+            m = resp.body.new_message_notify.message
+            if not m.conversation_id:
+                return
+            c = json.loads(m.content or "{}")
+            t = m.message_type
+            text = c.get("text") if t == 7 else {5: "[表情包]", 17: "[语音]", 27: "[图片]"}.get(t) or (f"[分享了视频 {c.get('itemId')}]" if t == 8 else None)
+            if text:
+                got.append({"from": m.sender, "text": text, "conversation": m.conversation_id})
+        except Exception:
+            pass
+
+    ws = _ws.WebSocketApp(rm.url, on_message=on_message, on_open=rm.on_open)
+    th = threading.Thread(target=lambda: ws.run_forever(), daemon=True)
+    th.start()
+    time.sleep(secs)
+    ws.close()
+    th.join(3)
+    return {"items": got, "listened": secs}
+
+
+ROUTES = {"/whoami": whoami, "/feed": feed, "/search": search, "/work": work, "/likes": likes, "/probe": probe,
+          "/followers": followers, "/following": following, "/collects": collects, "/notices": notices, "/comments": comments,
+          "/digg": digg, "/collect": collect, "/dm_send": dm_send, "/dm_recv": dm_recv}
 
 
 class Handler(BaseHTTPRequestHandler):
