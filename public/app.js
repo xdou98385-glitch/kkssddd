@@ -731,7 +731,10 @@ function connGroup(g) {
           show();
         }, 1000);
         // 自动检查有没有扫成功（每 6 秒一次，别太勤，那边是个小浏览器）
+        let checking = false;
         poll = setInterval(async () => {
+          if (checking) return; // 上一次检查还没回来（登录后那次会真去读一次主页，比较慢）
+          checking = true;
           try {
             const t = await api("/connections/xhs/test", { method: "POST" });
             if (t.ok) {
@@ -742,6 +745,7 @@ function connGroup(g) {
               connMsg[g.id] = { text: "连接正常。" + (t.detail ? " " + t.detail : ""), bad: false };
             }
           } catch { /* 下一轮再试 */ }
+          checking = false;
         }, 6000);
         qr.disabled = false; // 仍然可以点；点了会重新要一张（要新一张的时候才点）
       } catch (err) {

@@ -121,7 +121,16 @@ export async function xhsStatus(): Promise<{ enabled: boolean; ok?: boolean; err
   try {
     const d = await call("/api/v1/login/status", {}, 20_000, false);
     const s = d.data ?? d;
-    return s.is_logged_in ? { enabled: true, ok: true, detail: `已登录${s.username ? "：" + s.username : ""}。今天已操作 ${usedToday()}/${DAILY} 次。` } : { enabled: true, ok: false, error: "容器连上了，但还没登录。点「登录二维码」，用小红书 app 扫一下。" };
+    if (!s.is_logged_in) return { enabled: true, ok: false, error: "容器连上了，但还没登录。点「登录二维码」，用小红书 app 扫一下。" };
+    // 登录态是不是真的能用，光看「已登录」不够：真去读一次她自己的主页，读到了才算数
+    let who = "";
+    try {
+      const me = (await xhsMe()).split("\n");
+      who = `账号：${me[0]}${me.find((l) => /^关注/.test(l)) ? " · " + me.find((l) => /^关注/.test(l)) : ""}。`;
+    } catch (err) {
+      who = `（登录了，但读主页没成功：${(err as Error).message}）`;
+    }
+    return { enabled: true, ok: true, detail: `已登录。${who}今天已操作 ${usedToday()}/${DAILY} 次。` };
   } catch (err) {
     return { enabled: true, ok: false, error: (err as Error).message };
   }
