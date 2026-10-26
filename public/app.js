@@ -707,8 +707,8 @@ function connGroup(g) {
     img.hidden = true;
     const tip = document.createElement("p");
     tip.className = "memory-status";
-    let timer = null, poll = null;
-    const stop = () => { clearInterval(timer); clearInterval(poll); timer = poll = null; };
+    let timer = null;
+    const stop = () => { clearInterval(timer); timer = null; };
     // 二维码要在电脑上显示，用手机里的小红书 app「扫一扫」；手机自己扫自己屏幕的话，截图再从相册扫。
     qr.onclick = async () => {
       if (qr.disabled) return;
@@ -723,30 +723,13 @@ function connGroup(g) {
         img.src = r.img;
         img.hidden = false;
         let left = r.expiresIn;
-        const show = () => { tip.textContent = `用小红书 app 扫一扫，约 ${left} 秒内有效。扫完不用再点什么，这里会自动检查。`; };
+        const show = () => { tip.textContent = `用小红书 app 扫一扫，约 ${left} 秒内有效。扫完后点下面的「保存并测试」，要等十几秒，只点一次。`; };
         show();
         timer = setInterval(() => {
           left -= 1;
           if (left <= 0) { stop(); img.hidden = true; tip.textContent = "二维码过期了。需要的话再点一次「登录二维码」。"; tip.classList.add("bad"); qr.disabled = false; return; }
           show();
         }, 1000);
-        // 自动检查有没有扫成功（每 6 秒一次，别太勤，那边是个小浏览器）
-        let checking = false;
-        poll = setInterval(async () => {
-          if (checking) return; // 上一次检查还没回来（登录后那次会真去读一次主页，比较慢）
-          checking = true;
-          try {
-            const t = await api("/connections/xhs/test", { method: "POST" });
-            if (t.ok) {
-              stop();
-              img.hidden = true;
-              qr.disabled = false;
-              tip.textContent = "登录成功。" + (t.detail ? " " + t.detail : "");
-              connMsg[g.id] = { text: "连接正常。" + (t.detail ? " " + t.detail : ""), bad: false };
-            }
-          } catch { /* 下一轮再试 */ }
-          checking = false;
-        }, 6000);
         qr.disabled = false; // 仍然可以点；点了会重新要一张（要新一张的时候才点）
       } catch (err) {
         tip.textContent = "没拿到二维码：" + err.message;

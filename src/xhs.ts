@@ -124,7 +124,7 @@ export async function xhsMe(): Promise<string> {
 export async function xhsStatus(): Promise<{ enabled: boolean; ok?: boolean; error?: string; detail?: string }> {
   if (!xhsEnabled) return { enabled: false };
   try {
-    const d = await call("/api/v1/login/status", {}, 20_000, false);
+    const d = await call("/api/v1/login/status", {}, 90_000, false); // 这台机器开一次浏览器要近 20 秒，别卡得太紧
     const s = d.data ?? d;
     if (!s.is_logged_in) return { enabled: true, ok: false, error: "容器连上了，但还没登录。点「登录二维码」，用小红书 app 扫一下。" };
     // 登录态是不是真的能用，光看「已登录」不够：真去读一次她自己的主页，读到了才算数
