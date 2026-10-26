@@ -37,7 +37,7 @@ function queued<T>(fn: () => Promise<T>, gap = true): Promise<T> {
   return run;
 }
 
-async function call(path: string, init: RequestInit = {}, timeoutMs = 60_000, countIt = true): Promise<any> {
+async function call(path: string, init: RequestInit = {}, timeoutMs = 120_000, countIt = true): Promise<any> {
   if (!xhsEnabled) throw new XhsError("小红书还没配置");
   if (countIt && usedToday() >= DAILY) throw new XhsError(`今天对小红书的操作已经到上限了（${DAILY} 次），明天再来，免得账号被盯上`);
   return queued(async () => {
@@ -50,7 +50,12 @@ async function call(path: string, init: RequestInit = {}, timeoutMs = 60_000, co
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {
-      throw new XhsError("连不上小红书那个容器：" + (err as Error).message);
+      const e = err as Error;
+      throw new XhsError(
+        e.name === "TimeoutError"
+          ? `小红书那个服务 ${Math.round(timeoutMs / 1000)} 秒没回话：浏览器可能卡住了，或者服务器太慢`
+          : "连不上小红书那个服务：" + e.message,
+      );
     }
     if (countIt) db.setSetting("xhs_usage", JSON.stringify({ day: day(), n: usedToday() + 1 }));
     const body: any = await res.json().catch(() => ({}));
@@ -87,7 +92,7 @@ export async function xhsFeed(): Promise<string> {
 }
 
 export async function xhsNote(feedId: string, token: string): Promise<string> {
-  const d = await call("/api/v1/feeds/detail", { method: "POST", body: JSON.stringify({ feed_id: feedId, xsec_token: token, load_all_comments: false }) }, 120_000);
+  const d = await call("/api/v1/feeds/detail", { method: "POST", body: JSON.stringify({ feed_id: feedId, xsec_token: token, load_all_comments: false }) }, 180_000);
   const note = d.data?.note ?? {};
   const it = note.interactInfo ?? {};
   const comments: any[] = d.data?.comments?.list ?? [];
