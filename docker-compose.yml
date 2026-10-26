@@ -29,3 +29,14 @@ services:
       - ./data/xhs:/app/data
     ports:
       - "127.0.0.1:18060:18060"
+
+  # 抖音（只读）小服务。不默认构建（免得它出问题拖累聊天网站更新）：
+  # 需要时单独运行 docker compose --profile douyin up -d --build douyin
+  # 只绑在本机 127.0.0.1:18070，cookie 不落盘，每次请求由聊天网站带过来。
+  douyin:
+    profiles: ["douyin"]
+    build: ./douyin
+    restart: unless-stopped
+    mem_limit: 700m
+    ports:
+      - "127.0.0.1:18070:18070"

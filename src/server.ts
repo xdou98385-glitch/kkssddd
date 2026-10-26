@@ -20,6 +20,7 @@ import { startPodcast } from "./podcast.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
 import { xhsQrcode, xhsStatus } from "./xhs.ts";
 import { recordShare } from "./share.ts";
+import { douyinStatus } from "./douyin.ts";
 import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
 import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
@@ -310,6 +311,7 @@ app.post("/api/connections/:group/test", async (c) => {
   if (id === "weread") return c.json(await wereadStatus());
   if (id === "voice") return c.json(await voiceStatus());
   if (id === "xhs") return c.json(await xhsStatus());
+  if (id === "douyin") return c.json(await douyinStatus());
   const last = db.latestEvent();
   return c.json({ enabled: deviceEnabled, ok: deviceEnabled, detail: last ? `最近一条事件：${new Date(last.at).toLocaleString("zh-CN")}` : "口令已设置，还没收到过事件" });
 });

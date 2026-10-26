@@ -3,6 +3,7 @@ import { coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
 import { activitySummary, deviceEnabled, userTz } from "./device.ts";
 import * as db from "./db.ts";
+import { douyinEnabled, dyFeed, dyLikes, dySearch, dyWork } from "./douyin.ts";
 import { XhsError, xhsEnabled, xhsFeed, xhsMe, xhsNote, xhsSearch } from "./xhs.ts";
 import { describeShares } from "./share.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
@@ -171,6 +172,50 @@ const deviceTool: Tool = {
   label: () => "看了眼她手机最近在干嘛",
 };
 
+// ---- 抖音（只读）----
+const douyinTools: Tool[] = [
+  {
+    def: {
+      name: "dy_feed",
+      description: "看她抖音首页的推荐流（她的账号推给她的东西），返回十几条的文字、作者、数据和 id。想知道她最近在刷什么时用。",
+      strict: true,
+      input_schema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    run: () => dyFeed(),
+    label: () => "刷了眼抖音推荐",
+  },
+  {
+    def: {
+      name: "dy_search",
+      description: "在抖音搜索视频，返回文字、作者、数据和 id。",
+      strict: true,
+      input_schema: { type: "object", properties: { keyword: { type: "string", description: "搜索关键词" } }, required: ["keyword"], additionalProperties: false },
+    },
+    run: (input) => dySearch(String(input.keyword ?? "")),
+    label: (input) => `搜了抖音：${input.keyword}`,
+  },
+  {
+    def: {
+      name: "dy_work",
+      description: "读一条抖音的文字、数据和热门评论（看不到画面）。ref 可以是 dy_feed / dy_search 返回的 id，也可以是她分享的抖音链接。",
+      strict: true,
+      input_schema: { type: "object", properties: { ref: { type: "string", description: "作品 id 或抖音链接" } }, required: ["ref"], additionalProperties: false },
+    },
+    run: (input) => dyWork(String(input.ref ?? "")),
+    label: () => "点开了一条抖音",
+  },
+  {
+    def: {
+      name: "dy_likes",
+      description: "看她最近在抖音点过赞的视频。想知道她喜欢什么类型的内容时用。",
+      strict: true,
+      input_schema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    run: () => dyLikes(),
+    label: () => "翻了翻她点赞过的抖音",
+  },
+];
+
 // ---- 小红书（只读）----
 const xhsTools: Tool[] = [
   {
@@ -260,6 +305,7 @@ export const getTools = (): Tool[] => [
   ...(wereadEnabled ? [wereadTool] : []),
   ...(deviceEnabled ? [deviceTool, shareTool] : []),
   ...(xhsEnabled ? xhsTools : []),
+  ...(douyinEnabled ? douyinTools : []),
 ];
 export const findTool = (name: string) => getTools().find((t) => t.def.name === name);
 
