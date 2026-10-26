@@ -12,3 +12,20 @@ services:
       DB_PATH: /data/chat.db
     volumes:
       - ./data:/data
+
+  # 小红书（只读）用的浏览器容器。不默认启动：在服务器 .env 里加一行 COMPOSE_PROFILES=social 才会起。
+  # 只绑在本机 127.0.0.1，外网访问不到；登录态（cookie）只存在 ./data/xhs 里。
+  xhs:
+    profiles: ["social"]
+    image: xpzouying/xiaohongshu-mcp
+    platform: linux/amd64
+    restart: unless-stopped
+    shm_size: 1gb
+    environment:
+      COOKIES_PATH: /app/data/cookies.json
+      HOME: /app/data/home
+      XDG_CONFIG_HOME: /app/data/config
+    volumes:
+      - ./data/xhs:/app/data
+    ports:
+      - "127.0.0.1:18060:18060"

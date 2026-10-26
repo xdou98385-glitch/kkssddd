@@ -2,11 +2,12 @@ import type Anthropic from "@anthropic-ai/sdk";
 import * as db from "./db.ts";
 import { summarize } from "./claude.ts";
 import { readImage } from "./uploads.ts";
-import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, WEREAD_GUIDE } from "./persona.ts";
+import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, WEREAD_GUIDE, XHS_GUIDE } from "./persona.ts";
 import { coreMemoryBlock } from "./tools.ts";
 import { memosEnabled } from "./memos.ts";
 import { wereadEnabled } from "./weread.ts";
 import { deviceEnabled, userTz } from "./device.ts";
+import { xhsEnabled } from "./xhs.ts";
 
 /** 系统提示词：人设 + 各功能的使用说明 + 核心记忆 + 更早对话的摘要。聊天和主动消息共用。 */
 export async function buildSystem(conv: db.Conversation): Promise<string> {
@@ -17,6 +18,7 @@ export async function buildSystem(conv: db.Conversation): Promise<string> {
     memosEnabled ? MEMORY_GUIDE : "",
     wereadEnabled ? WEREAD_GUIDE : "",
     deviceEnabled ? DEVICE_GUIDE : "",
+    xhsEnabled ? XHS_GUIDE : "",
     await coreMemoryBlock(),
     conv.summary ? `此前对话的摘要（更早的内容已不在上下文里）：\n${conv.summary}` : "",
   ]

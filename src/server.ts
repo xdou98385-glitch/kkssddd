@@ -18,6 +18,7 @@ import { getProactive, heartbeat, startScheduler, updateProactive } from "./proa
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { startPodcast } from "./podcast.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
+import { xhsQrcode, xhsStatus } from "./xhs.ts";
 import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
 import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
@@ -285,8 +286,14 @@ app.post("/api/connections/:group/test", async (c) => {
   if (id === "memos") return c.json(await memosStatus());
   if (id === "weread") return c.json(await wereadStatus());
   if (id === "voice") return c.json(await voiceStatus());
+  if (id === "xhs") return c.json(await xhsStatus());
   const last = db.latestEvent();
   return c.json({ enabled: deviceEnabled, ok: deviceEnabled, detail: last ? `最近一条事件：${new Date(last.at).toLocaleString("zh-CN")}` : "口令已设置，还没收到过事件" });
+});
+
+// 小红书登录二维码：用小红书 app 扫一下
+app.get("/api/connections/xhs/qrcode", async (c) => {
+  try { return c.json(await xhsQrcode()); } catch (err) { return c.json({ error: (err as Error).message }, 502); }
 });
 
 // 通话：一轮 = 上传她说的一段录音（或 X-Call-Start 表示刚接通）→ 识别 → Claude 回 → 返回文字，音频走 /api/tts/:id

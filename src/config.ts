@@ -11,10 +11,11 @@ export interface Field {
   generate?: boolean; // 可以一键生成随机口令
 }
 export interface Group {
-  id: "memos" | "weread" | "device" | "voice";
+  id: "memos" | "weread" | "device" | "voice" | "xhs";
   title: string;
   hint: string;
   fields: Field[];
+  qrcode?: boolean; // 设置页显示「登录二维码」按钮
 }
 
 export const GROUPS: Group[] = [
@@ -46,6 +47,16 @@ export const GROUPS: Group[] = [
     fields: [
       { name: "ELEVENLABS_API_KEY", label: "API Key", secret: true },
       { name: "ELEVENLABS_VOICE_ID", label: "Voice ID", secret: false },
+    ],
+  },
+  {
+    id: "xhs",
+    title: "小红书（只读）",
+    hint: "靠旁边的 xiaohongshu-mcp 容器：它用浏览器替你登录，这里只填它的地址。点「登录二维码」，用小红书 app 扫一下就行，账号密码和 cookie 不会经过这个页面。只能搜索、看推荐、看笔记和评论，不能点赞评论发帖。",
+    qrcode: true,
+    fields: [
+      { name: "XHS_URL", label: "地址", secret: false, placeholder: "http://127.0.0.1:18060" },
+      { name: "XHS_TOKEN", label: "口令（可选）", secret: true },
     ],
   },
 ];

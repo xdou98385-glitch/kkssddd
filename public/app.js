@@ -76,6 +76,10 @@ const TOOL_LABELS = {
   weread: "查了微信读书",
   device_activity: "看了眼她手机最近在干嘛",
   get_time: "看了眼时间",
+  xhs_search: "搜了小红书",
+  xhs_feed: "刷了眼小红书推荐",
+  xhs_note: "点开了一条小红书笔记",
+  xhs_me: "看了眼她的小红书主页",
 };
 
 function dayDivider(key) {
@@ -694,6 +698,24 @@ function connGroup(g) {
       wrap.append(view);
     }
   }
+  if (g.qrcode) {
+    const qr = document.createElement("button");
+    qr.type = "button";
+    qr.textContent = "登录二维码";
+    const img = document.createElement("img");
+    img.className = "conn-qr";
+    img.hidden = true;
+    qr.onclick = async () => {
+      try {
+        const r = await api("/connections/xhs/qrcode");
+        if (r.loggedIn) { toast("已经登录了"); return; }
+        img.src = r.img;
+        img.hidden = false;
+        toast("用小红书 app 扫一下，扫完点「保存并测试」");
+      } catch (err) { toast(err.message); }
+    };
+    wrap.append(qr, img);
+  }
   const status = document.createElement("p");
   status.className = "memory-status";
   if (connMsg[g.id]) { status.textContent = connMsg[g.id].text; status.classList.toggle("bad", connMsg[g.id].bad); }
@@ -714,7 +736,7 @@ function connGroup(g) {
       status.textContent = "测试中…";
       const r = await api(`/connections/${g.id}/test`, { method: "POST" });
       const bad = Boolean(r.enabled && !r.ok);
-      status.textContent = !r.enabled ? "还没填完整。" : r.ok ? "连接正常。" + (r.detail ? " " + r.detail : "") : "连不上：" + r.error;
+      status.textContent = !r.enabled ? "还没填完整。" : r.ok ? "连接正常。" + (r.detail ? " " + r.detail : "") : "没成功：" + r.error;
       status.classList.toggle("bad", bad);
       connMsg[g.id] = { text: status.textContent, bad };
       if (r.enabled && r.ok) { await loadConnections(); }

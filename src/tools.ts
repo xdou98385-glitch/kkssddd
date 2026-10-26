@@ -3,6 +3,7 @@ import { coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
 import { activitySummary, deviceEnabled, userTz } from "./device.ts";
 import * as db from "./db.ts";
+import { XhsError, xhsEnabled, xhsFeed, xhsMe, xhsNote, xhsSearch } from "./xhs.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
 
 export interface Tool {
@@ -169,6 +170,55 @@ const deviceTool: Tool = {
   label: () => "看了眼她手机最近在干嘛",
 };
 
+// ---- 小红书（只读）----
+const xhsTools: Tool[] = [
+  {
+    def: {
+      name: "xhs_search",
+      description: "在小红书搜索笔记，返回标题、作者、点赞等和每条的 feed_id、xsec_token。她想看小红书上关于某个话题的内容、攻略、评价时用。",
+      strict: true,
+      input_schema: { type: "object", properties: { keyword: { type: "string", description: "搜索关键词" } }, required: ["keyword"], additionalProperties: false },
+    },
+    run: (input) => xhsSearch(String(input.keyword ?? "")),
+    label: (input) => `搜了小红书：${input.keyword}`,
+  },
+  {
+    def: {
+      name: "xhs_feed",
+      description: "看她小红书首页的推荐流（她的账号推给她的东西），返回前十几条。想知道她最近被推了什么、在刷什么时用。",
+      strict: true,
+      input_schema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    run: () => xhsFeed(),
+    label: () => "刷了眼小红书推荐",
+  },
+  {
+    def: {
+      name: "xhs_note",
+      description: "打开一条小红书笔记，读正文和热门评论。feed_id 和 xsec_token 必须原样用 xhs_search 或 xhs_feed 返回的，别自己编。",
+      strict: true,
+      input_schema: {
+        type: "object",
+        properties: { feed_id: { type: "string" }, xsec_token: { type: "string" } },
+        required: ["feed_id", "xsec_token"],
+        additionalProperties: false,
+      },
+    },
+    run: (input) => xhsNote(String(input.feed_id ?? ""), String(input.xsec_token ?? "")),
+    label: () => "点开了一条小红书笔记",
+  },
+  {
+    def: {
+      name: "xhs_me",
+      description: "看她自己的小红书主页：昵称、简介、关注粉丝数和她发过的笔记。",
+      strict: true,
+      input_schema: { type: "object", properties: {}, additionalProperties: false },
+    },
+    run: () => xhsMe(),
+    label: () => "看了眼她的小红书主页",
+  },
+];
+
 // ---- 时钟：此刻的准确时间 ----
 const clockTool: Tool = {
   def: {
@@ -196,6 +246,7 @@ export const getTools = (): Tool[] => [
   ...(memosEnabled ? memoryTools : []),
   ...(wereadEnabled ? [wereadTool] : []),
   ...(deviceEnabled ? [deviceTool] : []),
+  ...(xhsEnabled ? xhsTools : []),
 ];
 export const findTool = (name: string) => getTools().find((t) => t.def.name === name);
 
