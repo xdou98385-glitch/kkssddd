@@ -16,6 +16,7 @@ export interface Group {
   hint: string;
   fields: Field[];
   qrcode?: boolean; // 设置页显示「登录二维码」按钮
+  probe?: boolean; // 设置页显示「体检」按钮：把每个功能各试一遍
 }
 
 export const GROUPS: Group[] = [
@@ -61,6 +62,7 @@ export const GROUPS: Group[] = [
   },
   {
     id: "douyin",
+    probe: true,
     title: "抖音（只读）",
     hint: "靠旁边的抖音小服务。需要你登录抖音网页版后的 cookie：在电脑浏览器登录 www.douyin.com，按 F12 → 网络(Network) → 筛选 Fetch/XHR → 点任意一个以 /aweme/v1/web/ 开头的请求 → 在「请求标头」里找到 Cookie，整串复制（要含 UIFID）。cookie 等于账号权限，只存在你自己的服务器上，这个页面不会再显示它。只能看推荐、搜索、作品和评论、你点过赞的，不能点赞评论发布。",
     fields: [

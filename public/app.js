@@ -785,6 +785,26 @@ function connGroup(g) {
   const actions = document.createElement("div");
   actions.className = "push-actions";
   actions.append(save, clear);
+  if (g.probe) {
+    // 体检：把每个功能各试一遍，要花一两分钟，也会算几次操作
+    const probe = document.createElement("button");
+    probe.type = "button";
+    probe.textContent = "体检（试读一遍）";
+    probe.onclick = async () => {
+      probe.disabled = true;
+      status.classList.remove("bad");
+      status.style.whiteSpace = "pre-line";
+      status.textContent = "试读中，推荐流、搜索、点赞列表各试一次，大概要半分钟到一分钟…";
+      try {
+        const r = await api(`/connections/${g.id}/test?deep=1`, { method: "POST" });
+        status.textContent = r.detail || r.error || "没有结果";
+        status.classList.toggle("bad", !r.ok);
+        connMsg[g.id] = { text: status.textContent, bad: !r.ok };
+      } catch (err) { status.textContent = "失败：" + err.message; status.classList.add("bad"); }
+      probe.disabled = false;
+    };
+    actions.append(probe);
+  }
   wrap.append(actions, status);
   return wrap;
 }

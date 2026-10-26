@@ -145,6 +145,22 @@ export async function dyWork(ref: string): Promise<string> {
 }
 
 // ---- 设置页用 ----
+/** 体检：每个只读功能各试一遍（会算几次操作），哪个通、哪个不通、为什么，一次说清 */
+export async function douyinProbe(): Promise<{ enabled: boolean; ok?: boolean; error?: string; detail?: string }> {
+  if (!douyinEnabled) return { enabled: false };
+  try {
+    const d = await call("/probe", {}, true);
+    const names: Record<string, string> = { whoami: "登录", feed: "推荐流", search: "搜索", likes: "点赞列表" };
+    const rows = Object.entries(d as Record<string, { ok: boolean; n?: number; via?: string; error?: string }>).map(
+      ([k, v]) => `${v.ok ? "✓" : "✗"} ${names[k] ?? k}${v.ok ? (v.n != null ? `（读到 ${v.n} 条${v.via ? "，走 " + v.via : ""}）` : "") : "：" + (v.error ?? "失败")}`,
+    );
+    const allOk = Object.values(d as Record<string, { ok: boolean }>).every((v) => v.ok);
+    return { enabled: true, ok: allOk, detail: rows.join("\n"), error: allOk ? undefined : rows.join("\n") };
+  } catch (err) {
+    return { enabled: true, ok: false, error: (err as Error).message };
+  }
+}
+
 export async function douyinStatus(): Promise<{ enabled: boolean; ok?: boolean; error?: string; detail?: string }> {
   if (!douyinEnabled) return { enabled: false };
   try {

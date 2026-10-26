@@ -78,11 +78,81 @@ def whoami(auth, body):
     return out
 
 
+def feed_v2(auth, n: int) -> dict:
+    """浏览器现在用的推荐流：POST /aweme/v2/web/module/feed/（2026-10 她的浏览器抓包）。
+    项目库里只有旧的 v1 GET；这里照浏览器的参数自己拼一个，签名、请求头仍用库里的现成部件。"""
+    from builder.header import HeaderBuilder, HeaderType
+    from builder.params import Params
+    from utils import http_client as http
+    from dy_apis.douyin_api import check_risk_response
+
+    refer = "https://www.douyin.com/"
+    headers = HeaderBuilder().build(HeaderType.FORM)
+    headers.set_referer(refer)
+    headers.with_uifid(auth)
+    headers.set_header("origin", "https://www.douyin.com")
+    params = Params()
+    params.with_platform(round_trip_time="100")
+    for k, v in [
+        ("module_id", "3003101"), ("count", str(n)), ("filterGids", ""), ("presented_ids", ""),
+        ("refresh_index", "5"), ("refer_id", ""), ("refer_type", "10"), ("pull_type", "2"),
+        ("awemePcRecRawData", '{"is_xigua_user":0,"danmaku_switch_status":0,"is_client":false}'),
+        ("Seo-Flag", "0"), ("install_time", str(int(time.time()) - 3600)), ("tag_id", ""), ("active_id", ""),
+        ("is_active_tab", "false"), ("use_lite_type", "0"), ("xigua_user", "0"),
+    ]:
+        params.add_param(k, v)
+    params.with_web_id(auth, refer)
+    params.with_uifid(auth)
+    params.with_verify_fp(auth)
+    params.add_param("msToken", auth.msToken)
+    params.with_a_bogus()
+    res = http.post("https://www.douyin.com/aweme/v2/web/module/feed/", headers=headers.get(), params=params.get(),
+                    cookies=auth.cookie, data="", verify=False)
+    check_risk_response(res)
+    return res.json()
+
+
+def read_feed(auth, n: int):
+    """先试旧接口 v1，不行（报错或空）再试浏览器现在用的 v2。返回 (items, 用了哪个, 失败原因们)"""
+    errs = []
+    for name, fn in (("v1", lambda: DouyinAPI.get_feed(auth, count=str(n))), ("v2", lambda: feed_v2(auth, n))):
+        try:
+            d = fn()
+            items = [brief(a) for a in awemes_from(d)][:n]
+            if items:
+                return items, name, errs
+            errs.append(f"{name}：返回里没有作品（字段：{','.join(sorted(d.keys())[:10])}）")
+        except Exception as e:
+            errs.append(f"{name}：{type(e).__name__}: {e}"[:300])
+    return [], None, errs
+
+
 def feed(auth, body):
     n = max(1, min(int(body.get("count") or 12), 20))
-    d = DouyinAPI.get_feed(auth, count=str(n))
-    items = [brief(a) for a in awemes_from(d)][:n]
-    return {"items": items, "keys": sorted(d.keys())[:12] if not items else None}
+    items, via, errs = read_feed(auth, n)
+    if not items:
+        raise RuntimeError("推荐流读不出来。" + " | ".join(errs))
+    return {"items": items, "via": via}
+
+
+def probe(auth, body):
+    """体检：把每个只读功能各试一遍，告诉她哪些通、哪些不通、为什么"""
+    out = {}
+
+    def run(name, fn):
+        try:
+            out[name] = {"ok": True, **fn()}
+        except Exception as e:
+            out[name] = {"ok": False, "error": f"{type(e).__name__}: {e}"[:300]}
+        time.sleep(1.5)
+
+    run("whoami", lambda: {"n": 1})
+    items, via, errs = read_feed(auth, 3)
+    out["feed"] = {"ok": bool(items), "n": len(items), "via": via, "error": " | ".join(errs) if not items else None}
+    time.sleep(1.5)
+    run("search", lambda: {"n": len(search(auth, {"query": "猫", "count": 2})["items"])})
+    run("likes", lambda: {"n": len(likes(auth, {"count": 2})["items"])})
+    return out
 
 
 def search(auth, body):
@@ -126,7 +196,7 @@ def likes(auth, body):
     return {"items": [brief(a) for a in awemes_from(d)][:n]}
 
 
-ROUTES = {"/whoami": whoami, "/feed": feed, "/search": search, "/work": work, "/likes": likes}
+ROUTES = {"/whoami": whoami, "/feed": feed, "/search": search, "/work": work, "/likes": likes, "/probe": probe}
 
 
 class Handler(BaseHTTPRequestHandler):
