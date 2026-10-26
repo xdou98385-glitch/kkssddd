@@ -6,7 +6,9 @@ import { cfg, onConfigChange } from "./config.ts";
 
 const base = () => (cfg("DOUYIN_URL") || "http://127.0.0.1:18070").replace(/\/+$/, "");
 export let douyinEnabled = false; // 填了 cookie 就算启用；设置页改了会重新计算
-const refresh = () => { douyinEnabled = cfg("DOUYIN_COOKIE") !== ""; };
+// 她从浏览器「请求标头」里复制时，常常连开头的 "cookie: " 一起带上了，去掉
+const cookieValue = () => cfg("DOUYIN_COOKIE").replace(/^\s*cookie:\s*/i, "").trim();
+const refresh = () => { douyinEnabled = cookieValue() !== ""; };
 onConfigChange(refresh);
 refresh();
 
@@ -36,7 +38,7 @@ function queued<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function call(path: string, body: Record<string, unknown> = {}, countIt = true): Promise<any> {
-  const cookie = cfg("DOUYIN_COOKIE");
+  const cookie = cookieValue();
   if (!cookie) throw new DouyinError("抖音还没配置 cookie");
   if (countIt && usedToday() >= DAILY) throw new DouyinError(`今天对抖音的操作已经到上限了（${DAILY} 次），明天再来，免得账号被盯上`);
   return queued(async () => {
