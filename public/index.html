@@ -52,6 +52,7 @@
         <button id="pod-run" type="button">来一期</button>
       </div>
       <p id="pod-status" class="memory-status"></p>
+      <p id="pod-quota" class="memory-status"></p>
       <ol id="episodes"></ol>
     </section>
 
@@ -108,6 +109,11 @@
         </select>
         <small>聊太长时，旧内容会自动压成摘要带到下一段，等于无缝换窗。窗口越小越省，原话记得越少，重要的事靠摘要和记忆。</small>
       </label>
+      <fieldset class="group" id="conn-box">
+        <legend>连接</legend>
+        <div id="conn-list"></div>
+        <p class="memory-status">密钥填进去以后只会显示「已设置」，不会再发回这个页面。ANTHROPIC_API_KEY 和登录密码仍然在服务器的 .env 里，填错会把你锁在外面，所以没放在这里。</p>
+      </fieldset>
       <fieldset class="group">
         <legend>主动消息</legend>
         <label class="switch"><input type="checkbox" id="pro-on"><span>允许它主动找我（发消息并推送到手机）</span></label>
@@ -125,9 +131,6 @@
         </div>
         <p id="push-status" class="memory-status"></p>
       </fieldset>
-      <p id="memory-status" class="memory-status"></p>
-      <p id="weread-status" class="memory-status"></p>
-      <p id="device-status" class="memory-status"></p>
       <div class="danger-zone">
         <button id="reset" type="button">清空聊天重新开始</button>
         <button id="logout" type="button" hidden>退出登录</button>

@@ -2,14 +2,19 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import * as db from "./db.ts";
 
-const token = process.env.DEVICE_TOKEN ?? "";
-export const deviceEnabled = token !== "";
+import { cfg, onConfigChange } from "./config.ts";
+
+const token = () => cfg("DEVICE_TOKEN");
+export let deviceEnabled = false; // 设置页改了配置会重新计算
+const refresh = () => { deviceEnabled = token() !== ""; };
+onConfigChange(refresh);
+refresh();
 
 /** 校验 Authorization: Bearer <DEVICE_TOKEN>，用定长比较防止通过耗时猜 token */
 export function checkRawToken(given: string | undefined): boolean {
   if (!deviceEnabled || !given) return false;
   const a = createHmac("sha256", "dev").update(given.trim()).digest();
-  const b = createHmac("sha256", "dev").update(token).digest();
+  const b = createHmac("sha256", "dev").update(token()).digest();
   return timingSafeEqual(a, b);
 }
 

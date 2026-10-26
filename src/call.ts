@@ -5,12 +5,13 @@ import { buildHistory, buildSystem, stripToolMarks } from "./context.ts";
 import { CALL_GUIDE } from "./persona.ts";
 import { speechText, synthesize, ttsEnabled, TtsError } from "./tts.ts";
 
-const key = process.env.ELEVENLABS_API_KEY || "";
+import { cfg } from "./config.ts";
+const key = () => cfg("ELEVENLABS_API_KEY");
 const sttModel = process.env.CALL_STT_MODEL || "scribe_v1";
 const MONTHLY_MIN = Math.max(0, Number(process.env.CALL_MONTHLY_MINUTES || 30) || 30); // 每月最多识别多少分钟她说的话
 export const MAX_CALL_MIN = Math.max(1, Number(process.env.CALL_MAX_MINUTES || 10) || 10); // 单次通话最长多少分钟
 
-export const callEnabled = ttsEnabled;
+export const callEnabled = () => ttsEnabled;
 
 const month = () => new Date().toISOString().slice(0, 7);
 function usedSeconds(): number {
@@ -40,7 +41,7 @@ export async function transcribe(audio: Buffer, mime: string, durationMs: number
     fd.append("file", new Blob([new Uint8Array(audio)], { type: base }), `turn.${ext}`);
     return fetch(`${process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io"}/v1/speech-to-text`, {
       method: "POST",
-      headers: { "xi-api-key": key },
+      headers: { "xi-api-key": key() },
       body: fd,
       signal: AbortSignal.timeout(30_000),
     });

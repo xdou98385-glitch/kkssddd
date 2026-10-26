@@ -5,8 +5,10 @@ import { dirname, join } from "node:path";
 import * as db from "./db.ts";
 import { translateForSpeech } from "./claude.ts";
 
-const key = process.env.ELEVENLABS_API_KEY || "";
-const voice = process.env.ELEVENLABS_VOICE_ID || "";
+import { cfg, onConfigChange } from "./config.ts";
+
+const key = () => cfg("ELEVENLABS_API_KEY");
+const voice = () => cfg("ELEVENLABS_VOICE_ID");
 const model = process.env.TTS_MODEL || "eleven_flash_v2_5"; // Flash 每字符只算 0.5 额度；想要更好的音质换 eleven_multilingual_v2
 const MAX_CHARS = Math.max(50, Number(process.env.TTS_MAX_CHARS || 400) || 400); // 单条最多念多少字
 const MONTHLY_CHARS = Math.max(0, Number(process.env.TTS_MONTHLY_CHARS || 20000) || 20000); // 每月最多生成多少字
@@ -39,7 +41,10 @@ export const podcastVoice: Voice = {
 const callMe = process.env.TTS_CALL_ME || "Kay"; // 英文里怎么称呼她
 const PROMPT_VERSION = "v4"; // 改了翻译提示词就加一，旧译文缓存自动作废
 
-export const ttsEnabled = Boolean(key && voice);
+export let ttsEnabled = false; // 设置页改了配置会重新计算
+const refresh = () => { ttsEnabled = Boolean(key() && voice()); };
+onConfigChange(refresh);
+refresh();
 
 const dir = join(dirname(process.env.DB_PATH ?? "data/chat.db"), "tts");
 mkdirSync(dir, { recursive: true });
@@ -110,7 +115,7 @@ const inflight = new Map<string, Promise<Buffer>>();
 /** 返回 mp3；缓存命中不花钱。ctx 是前后文，长文分段时用来让语气衔接 */
 export async function synthesize(text: string, v: Voice = chatVoice, ctx: { previous?: string; next?: string } = {}): Promise<Buffer> {
   if (!ttsEnabled) throw new TtsError("还没配置语音");
-  const name = createHash("sha256").update(`${v.model}|${voice}|${JSON.stringify(v.settings)}|${text}`).digest("hex").slice(0, 32) + ".mp3";
+  const name = createHash("sha256").update(`${v.model}|${voice()}|${JSON.stringify(v.settings)}|${text}`).digest("hex").slice(0, 32) + ".mp3";
   const file = join(dir, name);
   if (existsSync(file)) return readFileSync(file);
   const pending = inflight.get(name);
@@ -120,10 +125,10 @@ export async function synthesize(text: string, v: Voice = chatVoice, ctx: { prev
     if (used() + text.length > MONTHLY_CHARS)
       throw new TtsError(`这个月的语音额度用完了（${used()}/${MONTHLY_CHARS} 字）`);
     const res = await fetch(
-      `${process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io"}/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_64`,
+      `${process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io"}/v1/text-to-speech/${encodeURIComponent(voice())}?output_format=mp3_44100_64`,
       {
         method: "POST",
-        headers: { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+        headers: { "xi-api-key": key(), "Content-Type": "application/json", Accept: "audio/mpeg" },
         body: JSON.stringify({
           text,
           model_id: v.model,
@@ -168,7 +173,7 @@ export function chunkText(text: string, max = 900): string[] {
 /** 长文配音：分块合成再拼起来，每块带上前后文让语气接得上；整段结果也缓存 */
 export async function synthesizeLong(text: string, v: Voice = podcastVoice): Promise<Buffer> {
   if (!ttsEnabled) throw new TtsError("还没配置语音");
-  const whole = join(dir, "ep-" + createHash("sha256").update(`${v.model}|${voice}|${JSON.stringify(v.settings)}|${text}`).digest("hex").slice(0, 32) + ".mp3");
+  const whole = join(dir, "ep-" + createHash("sha256").update(`${v.model}|${voice()}|${JSON.stringify(v.settings)}|${text}`).digest("hex").slice(0, 32) + ".mp3");
   if (existsSync(whole)) return readFileSync(whole);
   if (used() + text.length > MONTHLY_CHARS)
     throw new TtsError(`这个月的语音额度不够做这一期了（已用 ${used()}/${MONTHLY_CHARS} 字，这期要约 ${text.length} 字）`);
@@ -180,4 +185,39 @@ export async function synthesizeLong(text: string, v: Voice = podcastVoice): Pro
   const all = Buffer.concat(bufs);
   writeFileSync(whole, all);
   return all;
+}
+
+// ---- ElevenLabs 账户的真实额度（不是我们自己记的字符数）----
+const api = () => process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io";
+let quotaCache: { at: number; left: number; limit: number; tier: string } | null = null;
+onConfigChange(() => { quotaCache = null; });
+
+/** 查账户：套餐、已用、总额。60 秒内重复查用缓存；查不到返回 null */
+export async function elevenQuota(force = false): Promise<{ left: number; limit: number; used: number; tier: string } | null> {
+  if (!ttsEnabled) return null;
+  if (!force && quotaCache && Date.now() - quotaCache.at < 60_000) return { ...quotaCache, used: quotaCache.limit - quotaCache.left };
+  try {
+    const res = await fetch(`${api()}/v1/user/subscription`, { headers: { "xi-api-key": key() }, signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const d = (await res.json()) as { character_count?: number; character_limit?: number; tier?: string };
+    if (typeof d.character_count !== "number" || typeof d.character_limit !== "number") return null;
+    quotaCache = { at: Date.now(), left: Math.max(0, d.character_limit - d.character_count), limit: d.character_limit, tier: d.tier ?? "" };
+    return { ...quotaCache, used: d.character_count };
+  } catch { return null; }
+}
+
+/** 设置页「测试」用：key 对不对、Voice ID 存不存在、还剩多少额度 */
+export async function voiceStatus(): Promise<{ enabled: boolean; ok?: boolean; error?: string; detail?: string }> {
+  if (!ttsEnabled) return { enabled: false };
+  try {
+    const sub = await fetch(`${api()}/v1/user/subscription`, { headers: { "xi-api-key": key() }, signal: AbortSignal.timeout(8000) });
+    if (sub.status === 401) return { enabled: true, ok: false, error: "API Key 不对" };
+    if (!sub.ok) return { enabled: true, ok: false, error: `账户查询出错 ${sub.status}` };
+    const v = await fetch(`${api()}/v1/voices/${encodeURIComponent(voice())}`, { headers: { "xi-api-key": key() }, signal: AbortSignal.timeout(8000) });
+    if (v.status === 404 || v.status === 400 || v.status === 422) return { enabled: true, ok: false, error: "Voice ID 找不到，检查有没有复制全" };
+    const q = await elevenQuota(true);
+    return { enabled: true, ok: true, detail: q ? `套餐 ${q.tier || "未知"}，本月已用 ${q.used}/${q.limit} 额度，还剩 ${q.left}` : "连接正常" };
+  } catch (err) {
+    return { enabled: true, ok: false, error: (err as Error).message };
+  }
 }

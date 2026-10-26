@@ -490,6 +490,7 @@ $("settings-btn").onclick = async () => {
   $("window-preset").value = st.window_preset;
   showMemoryStatus("检查记忆连接…", false);
   loadProactiveUI();
+  loadConnections();
   els.settings.showModal();
   try {
     const s = await api("/memory/status");
@@ -509,6 +510,7 @@ $("settings-btn").onclick = async () => {
   }
 };
 function showMemoryStatus(text, bad, id = "memory-status") {
+  if (!$(id)) return; // 这几行已经并进「连接」区了
   const el = $(id);
   el.textContent = text;
   el.classList.toggle("bad", bad);
@@ -534,6 +536,7 @@ els.settings.addEventListener("close", async () => {
 const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 function setStatus(id, text, bad = false) {
+  if (!$(id)) return;
   const el = $(id);
   el.textContent = text;
   el.classList.toggle("bad", bad);
@@ -639,6 +642,114 @@ $("pro-run").onclick = async () => {
   btn.disabled = false;
 };
 
+// ---- 设置：连接（API key、地址）----
+const connMsg = {}; // 每组最近一次保存/测试的结果，重新渲染后还要显示
+async function loadConnections() {
+  const box = $("conn-list");
+  let groups;
+  try { groups = (await api("/connections")).groups; } catch { box.textContent = "读取失败"; return; }
+  box.replaceChildren(...groups.map(connGroup));
+}
+
+function connGroup(g) {
+  const wrap = document.createElement("div");
+  wrap.className = "conn";
+  const title = document.createElement("div");
+  title.className = "conn-title";
+  title.textContent = g.title;
+  const hint = document.createElement("small");
+  hint.textContent = g.hint;
+  wrap.append(title, hint);
+
+  const inputs = {};
+  for (const f of g.fields) {
+    const row = document.createElement("label");
+    row.className = "conn-row";
+    const name = document.createElement("span");
+    name.textContent = f.label;
+    const input = document.createElement("input");
+    input.type = f.secret ? "password" : "text";
+    input.autocomplete = "off";
+    input.autocapitalize = "off";
+    input.spellcheck = false;
+    if (f.secret) input.placeholder = f.set ? `已设置（${f.source === "env" ? "来自 .env" : "来自这里"}），留空不改` : "还没设置";
+    else { input.value = f.value || ""; input.placeholder = f.placeholder || ""; }
+    inputs[f.name] = { input, f };
+    row.append(name, input);
+    wrap.append(row);
+    if (f.generate) {
+      const gen = document.createElement("button");
+      gen.type = "button";
+      gen.textContent = "随机生成";
+      gen.onclick = () => { input.type = "text"; input.value = [...crypto.getRandomValues(new Uint8Array(20))].map((b) => b.toString(16).padStart(2, "0")).join(""); };
+      wrap.append(gen);
+    }
+    if (f.reveal && f.set) {
+      const view = document.createElement("button");
+      view.type = "button";
+      view.textContent = "查看";
+      view.onclick = async () => {
+        try { const r = await api("/connections/reveal/" + f.name); input.type = "text"; input.value = r.value; } catch (err) { toast(err.message); }
+      };
+      wrap.append(view);
+    }
+  }
+  const status = document.createElement("p");
+  status.className = "memory-status";
+  if (connMsg[g.id]) { status.textContent = connMsg[g.id].text; status.classList.toggle("bad", connMsg[g.id].bad); }
+  const save = document.createElement("button");
+  save.type = "button";
+  save.textContent = "保存并测试";
+  save.onclick = async () => {
+    const values = {};
+    for (const { input, f } of Object.values(inputs)) {
+      const v = input.value.trim();
+      if (f.secret ? v !== "" : v !== (f.value || "")) values[f.name] = v; // 密钥留空 = 不改；普通项改了才传
+    }
+    save.disabled = true;
+    status.className = "memory-status";
+    status.textContent = "保存中…";
+    try {
+      if (Object.keys(values).length) await api("/connections", { method: "PUT", body: { values } });
+      status.textContent = "测试中…";
+      const r = await api(`/connections/${g.id}/test`, { method: "POST" });
+      const bad = Boolean(r.enabled && !r.ok);
+      status.textContent = !r.enabled ? "还没填完整。" : r.ok ? "连接正常。" + (r.detail ? " " + r.detail : "") : "连不上：" + r.error;
+      status.classList.toggle("bad", bad);
+      connMsg[g.id] = { text: status.textContent, bad };
+      if (r.enabled && r.ok) { await loadConnections(); }
+      refreshFlags();
+    } catch (err) { status.textContent = "失败：" + err.message; status.classList.add("bad"); }
+    save.disabled = false;
+  };
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.textContent = "清除";
+  clear.title = "清掉这里填的值，退回服务器 .env 里的";
+  clear.onclick = async () => {
+    if (!confirm(`清除「${g.title}」在这里填的值？（.env 里的不受影响）`)) return;
+    await api("/connections", { method: "PUT", body: { values: Object.fromEntries(g.fields.map((f) => [f.name, null])) } });
+    delete connMsg[g.id];
+    await loadConnections();
+    refreshFlags();
+  };
+  const actions = document.createElement("div");
+  actions.className = "push-actions";
+  actions.append(save, clear);
+  wrap.append(actions, status);
+  return wrap;
+}
+
+// 连接改了以后，语音相关的标签页要跟着出现或消失
+async function refreshFlags() {
+  const d = await api("/thread?limit=1").catch(() => null);
+  if (!d) return;
+  state.tts = Boolean(d.tts);
+  state.call = Boolean(d.call);
+  $("tab-radio").hidden = !state.tts;
+  $("tab-call").hidden = !state.call;
+}
+
 // ---- 电台页 ----
 const TICKS = 28;
 $("deck-bar").innerHTML = "<i></i>".repeat(TICKS);
@@ -661,7 +772,9 @@ const epLabel = { writing: "写稿中…", voicing: "配音中…" };
 async function loadEpisodes() {
   const list = $("episodes");
   let eps;
-  try { eps = (await api("/podcasts")).episodes; } catch { return; }
+  let q = null;
+  try { const d = await api("/podcasts"); eps = d.episodes; q = d.quota; } catch { return; }
+  $("pod-quota").textContent = q ? `ElevenLabs 额度：本月还剩 ${q.left.toLocaleString()} / ${q.limit.toLocaleString()}（一期约 3000 多）` : "";
   const open = new Set([...list.querySelectorAll(".ep.open")].map((li) => li.dataset.id)); // 刷新时保持展开状态
   list.replaceChildren(...eps.map((e, i) => episodeRow(e, eps.length - i, open.has(String(e.id)))));
   if (!eps.length) list.innerHTML = '<li class="ep-empty">还没有。点「来一期」。</li>';

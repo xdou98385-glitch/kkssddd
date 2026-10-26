@@ -189,14 +189,15 @@ const clockTool: Tool = {
   label: () => "看了眼时间",
 };
 
-export const tools: Tool[] = [
+// 每次取都重新算：设置页里开关某个连接后，立刻生效
+export const getTools = (): Tool[] => [
   clockTool,
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),
   ...(wereadEnabled ? [wereadTool] : []),
   ...(deviceEnabled ? [deviceTool] : []),
 ];
-export const findTool = (name: string) => tools.find((t) => t.def.name === name);
+export const findTool = (name: string) => getTools().find((t) => t.def.name === name);
 
 /** 每次对话开头注入的核心记忆（Memos 里带 #core 标签的笔记），拉不到就当没有 */
 export async function coreMemoryBlock(): Promise<string> {

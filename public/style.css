@@ -183,6 +183,18 @@ dialog button.primary { background: var(--ink); color: var(--ink-text); border-c
 #reset { color: var(--danger); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+/* ---- 设置里的连接 ---- */
+.conn { display: grid; gap: 8px; padding: 12px 0; border-top: 1px solid var(--hairline); }
+.conn:first-child { border-top: 0; padding-top: 0; }
+.conn-title { font: 500 14px/1.4 var(--sans); }
+.conn small { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.conn-row { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); align-items: center; gap: 10px; }
+.conn-row span { font-size: 12.5px; color: var(--muted); letter-spacing: 0.06em; }
+.conn-row input { width: 100%; min-width: 0; padding: 9px 12px; border-radius: 12px; background: var(--bg); border: 1px solid var(--hairline); color: var(--text); font: 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace; outline: 0; }
+.conn-row input:focus { border-color: var(--muted); }
+.conn > button { justify-self: start; }
+.conn .memory-status { margin: 0; }
+
 /* ---- 页面切换 ---- */
 body[data-page="radio"] :is(#messages, #attachments, #composer),
 body[data-page="call"] :is(#messages, #attachments, #composer),

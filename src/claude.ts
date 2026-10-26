@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { findTool, tools } from "./tools.ts";
+import { findTool, getTools } from "./tools.ts";
 
 // key 从环境变量 ANTHROPIC_API_KEY 读取，不要写进代码
 const client = new Anthropic();
@@ -50,6 +50,7 @@ export async function streamChat(opts: {
     console.log(`usage: ${opts.tag ?? "chat"} ${model.id} in=${used.input} cache_read=${used.cacheRead} cache_write=${used.cacheWrite} out=${used.output}`);
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
+    const toolList = getTools();
     const stream = client.beta.messages.stream(
       {
         model: model.id,
@@ -58,7 +59,7 @@ export async function streamChat(opts: {
         cache_control: { type: "ephemeral" },
         ...(opts.system ? { system: opts.system } : {}),
         ...(model.effort ? { output_config: { effort: opts.effort ?? model.effort } } : {}),
-        ...(tools.length ? { tools: tools.map((t) => t.def) } : {}),
+        ...(toolList.length ? { tools: toolList.map((t) => t.def) } : {}),
         // 被安全分类器拒绝时，服务器自动换模型重跑
         ...(model.fallback
           ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }

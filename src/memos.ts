@@ -1,8 +1,13 @@
 // Memos 记忆后端。只用 v0.22+ 的公开接口：GET/POST /api/v1/memos，Bearer token。
-const base = (process.env.MEMOS_URL ?? "").replace(/\/+$/, "");
-const token = process.env.MEMOS_TOKEN ?? "";
+import { cfg, onConfigChange } from "./config.ts";
 
-export const memosEnabled = base !== "" && token !== "";
+const base = () => cfg("MEMOS_URL").replace(/\/+$/, "");
+const token = () => cfg("MEMOS_TOKEN");
+
+export let memosEnabled = false; // 设置页改了配置会重新计算（别的模块里是实时绑定）
+const refresh = () => { memosEnabled = base() !== "" && token() !== ""; };
+onConfigChange(() => { refresh(); cache = null; });
+refresh();
 
 export interface Memo {
   name: string;
@@ -11,9 +16,9 @@ export interface Memo {
 }
 
 async function memosFetch(path: string, init?: RequestInit): Promise<any> {
-  const res = await fetch(base + path, {
+  const res = await fetch(base() + path, {
     ...init,
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${token()}`, "Content-Type": "application/json" },
     signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) throw new Error(`Memos ${res.status}: ${(await res.text()).slice(0, 200)}`);

@@ -18,7 +18,8 @@ import { getProactive, heartbeat, startScheduler, updateProactive } from "./proa
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { startPodcast } from "./podcast.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
-import { TtsError, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled } from "./tts.ts";
+import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
+import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
 
 const app = new Hono();
@@ -155,7 +156,7 @@ app.get("/api/thread", (c) => {
   return c.json({
     conversation: { id: conv.id, model: conv.model },
     tts: ttsEnabled,
-    call: callEnabled,
+    call: callEnabled(),
     ...db.messagePage(conv.id, before, limit),
   });
 });
@@ -256,11 +257,41 @@ app.post("/api/thread/regenerate", (c) => {
   return replyStream(c, conv, db.takeMessage(id));
 });
 
-app.get("/api/podcasts", (c) => c.json({ episodes: db.listEpisodes(40).map(({ en: _en, ...e }) => e) }));
+app.get("/api/podcasts", async (c) => c.json({ episodes: db.listEpisodes(40).map(({ en: _en, ...e }) => e), quota: await elevenQuota() }));
+
+// ---- 设置页的「连接」：填 API key、地址，保存并测试 ----
+app.get("/api/connections", (c) => c.json({ groups: describeGroups() }));
+
+app.put("/api/connections", async (c) => {
+  const body = await c.req.json<{ values?: Record<string, string | null> }>().catch(() => ({}) as { values?: Record<string, string | null> });
+  try {
+    for (const [name, v] of Object.entries(body.values ?? {})) setCfg(name, v);
+  } catch (err) {
+    return c.json({ error: err instanceof ConfigError ? err.message : "保存失败" }, 400);
+  }
+  notifyConfigChanged();
+  return c.json({ ok: true });
+});
+
+// 只有标了 reveal 的项（设备口令）能读出来
+app.get("/api/connections/reveal/:name", (c) => {
+  const name = c.req.param("name");
+  return canReveal(name) ? c.json({ value: cfg(name) }) : c.json({ error: "这一项不能查看" }, 403);
+});
+
+app.post("/api/connections/:group/test", async (c) => {
+  const id = c.req.param("group");
+  if (!GROUPS.some((g) => g.id === id)) return c.json({ error: "未知的连接" }, 404);
+  if (id === "memos") return c.json(await memosStatus());
+  if (id === "weread") return c.json(await wereadStatus());
+  if (id === "voice") return c.json(await voiceStatus());
+  const last = db.latestEvent();
+  return c.json({ enabled: deviceEnabled, ok: deviceEnabled, detail: last ? `最近一条事件：${new Date(last.at).toLocaleString("zh-CN")}` : "口令已设置，还没收到过事件" });
+});
 
 // 通话：一轮 = 上传她说的一段录音（或 X-Call-Start 表示刚接通）→ 识别 → Claude 回 → 返回文字，音频走 /api/tts/:id
 app.post("/api/call/turn", bodyLimit({ maxSize: 8 * 1024 * 1024, onError: (c) => c.json({ error: "录音太大" }, 413) }), async (c) => {
-  if (!callEnabled) return c.json({ error: "还没配置语音" }, 400);
+  if (!callEnabled()) return c.json({ error: "还没配置语音" }, 400);
   try {
     if (c.req.header("x-call-start")) return c.json({ maxMinutes: MAX_CALL_MIN, ...(await callTurn({ hello: true })) });
     const audio = Buffer.from(await c.req.arrayBuffer());
@@ -274,10 +305,14 @@ app.post("/api/call/turn", bodyLimit({ maxSize: 8 * 1024 * 1024, onError: (c) =>
   }
 });
 
-// 微播客：写一段独白存进聊天，返回消息 id，前端再去朗读
+// 微播客，返回消息 id，前端再去朗读
 app.post("/api/podcast", async (c) => {
   if (!ttsEnabled) return c.json({ error: "还没配置语音" }, 400);
   const body = await c.req.json<{ topic?: string }>().catch(() => ({}) as { topic?: string });
+  // 先看账户里真实的额度够不够，别做到一半没钱配音
+  const q = await elevenQuota(true);
+  const need = /flash|turbo/.test(podcastVoice.model) ? 1800 : 3500;
+  if (q && q.left < need) return c.json({ error: `ElevenLabs 账户本月只剩 ${q.left} 额度，一期大约要 ${need}。等额度重置或升级套餐。` }, 402);
   const r = startPodcast(String(body.topic ?? ""));
   return "error" in r ? c.json(r, 409) : c.json(r);
 });

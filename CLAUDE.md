@@ -17,6 +17,7 @@ src/server.ts     路由 + SSE 流式；访问日志（只记路径，不记问�
 src/claude.ts     调 Claude（模型表、流式、工具循环、缓存、fallback、摘要）
 src/context.ts    系统提示词拼装 buildSystem、历史窗口 buildHistory、滚动摘要、系统记录 TOOL_MARK
 src/persona.ts    默认人设（来自她在 claude.ai 的偏好）+ 各功能使用说明（HONESTY/GAME/WEREAD/DEVICE/MEMORY_GUIDE）
+src/config.ts     设置页「连接」：MEMOS_URL/MEMOS_TOKEN/WEREAD_API_KEY/DEVICE_TOKEN/ELEVENLABS_API_KEY/ELEVENLABS_VOICE_ID 存在 settings 表（键 cfg:名字），优先于 .env，清空退回 .env；各模块用 cfg() 现读，`memosEnabled` 等是 export let 实时绑定，改完 notifyConfigChanged() 立即生效不用重启；getTools() 每次重算。密钥只写不读（只有 DEVICE_TOKEN 可点「查看」）。ANTHROPIC_API_KEY 和 APP_PASSWORD 故意仍只在 .env。
 src/tools.ts      给 Claude 的工具：sudoku_*、search/save_memory、weread、device_activity
 src/memos.ts      Memos 记忆（/api/v1/memos，Bearer token，标签 #claude 是它写的，#core 每次对话自动注入）
 src/weread.ts     微信读书网关（只读，参数平铺，skill_version 1.0.4，401/upgrade_info 照实报告）
@@ -32,6 +33,7 @@ public/           底部标签栏切页（对话/电台/棋盘，body[data-page]
 ```
 
 ## .env 变量（只写名字）
+（下面带 API key/地址的几项现在也能在设置页「连接」里填，她不用再进终端；.env 仍然有效。）
 ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, TTS_MODEL(默认 eleven_flash_v2_5), TTS_MAX_CHARS(400), TTS_MONTHLY_CHARS(20000), TTS_SPEED(0.85)/TTS_STABILITY(0.35)/TTS_STYLE(0.3), TTS_CALL_ME(默认 Kay), TTS_TRANSLATE_TO(默认 English), TTS_PODCAST_MODEL(eleven_multilingual_v2)/POD_SPEED(0.95)/POD_STABILITY(0.45)/POD_STYLE(0.4), CALL_MONTHLY_MINUTES(30), CALL_MAX_MINUTES(10), CALL_STT_MODEL(scribe_v1，被拒绝时自动换 scribe_v2), PROACTIVE_EVERY_MIN(默认90), PUSH_CONTACT(可空), PORT/DB_PATH。空值要用 `||` 而不是 `??` 判断（compose 的 env_file 会把空行变成空字符串）。
 
 ## 部署
