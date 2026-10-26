@@ -87,7 +87,7 @@ export class ConfigError extends Error {}
 export function setCfg(name: string, value: string | null): void {
   if (!FIELDS.has(name)) throw new ConfigError("未知的配置项");
   const v = (value ?? "").trim();
-  if (v.length > 20000 || /[\r\n\0]/.test(v)) throw new ConfigError("内容不合法");
+  if (v.length > 60000 || /[\r\n\0]/.test(v)) throw new ConfigError("内容不合法");
   db.setSetting(key(name), v);
 }
 export function notifyConfigChanged(): void {

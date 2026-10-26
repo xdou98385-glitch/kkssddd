@@ -6,8 +6,21 @@ import { cfg, onConfigChange } from "./config.ts";
 
 const base = () => (cfg("DOUYIN_URL") || "http://127.0.0.1:18070").replace(/\/+$/, "");
 export let douyinEnabled = false; // 填了 cookie 就算启用；设置页改了会重新计算
-// 她从浏览器「请求标头」里复制时，常常连开头的 "cookie: " 一起带上了，去掉
-const cookieValue = () => cfg("DOUYIN_COOKIE").replace(/^\s*cookie:\s*/i, "").trim();
+// 她粘进来的可能是：纯 cookie 串、带 "cookie: " 前缀的一行，或者 Chrome「Copy as cURL」整条命令。
+// 三种都认，从里面取出 cookie 那一段。
+export function extractCookie(raw: string): string {
+  const v = raw.replace(/\s+/g, " ").trim();
+  if (/^curl\b/i.test(v)) {
+    const m =
+      v.match(/(?:^|\s)(?:-b|--cookie)\s+\$?'([^']*)'/) ||
+      v.match(/(?:^|\s)(?:-b|--cookie)\s+\$?"([^"]*)"/) ||
+      v.match(/-H\s+\$?'cookie:\s*([^']*)'/i) ||
+      v.match(/-H\s+\$?"cookie:\s*([^"]*)"/i);
+    return m ? m[1].trim() : "";
+  }
+  return v.replace(/^cookie:\s*/i, "").trim();
+}
+const cookieValue = () => extractCookie(cfg("DOUYIN_COOKIE"));
 const refresh = () => { douyinEnabled = cookieValue() !== ""; };
 onConfigChange(refresh);
 refresh();
