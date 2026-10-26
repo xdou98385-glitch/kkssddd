@@ -19,6 +19,7 @@ import { currentOrNew, generate, place, publicState, saveGame, type Difficulty }
 import { startPodcast } from "./podcast.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
 import { xhsQrcode, xhsStatus } from "./xhs.ts";
+import { recordShare } from "./share.ts";
 import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
 import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
@@ -106,6 +107,28 @@ app.post("/api/proactive/run", async (c) => c.json(await heartbeat({ force: true
 
 // ---- 设备事件：快捷指令用 DEVICE_TOKEN 上报（不走登录 cookie）----
 // POST：口令可以放在 Authorization 请求头里，也可以放在网址的 token 参数里；kind/app/detail 同理，请求体里的优先
+// 分享入口：快捷指令把抖音/小红书的分享内容 POST 到这里。口令同设备事件。
+// 请求体可以是 JSON {text, url}，也可以直接是一段纯文字（快捷指令里最省事）。
+app.post("/api/share", async (c) => {
+  const q = c.req.query();
+  if (!checkDeviceToken(c.req.header("authorization")) && !checkRawToken(q.token)) return c.json({ error: "unauthorized" }, 401);
+  const type = c.req.header("content-type") ?? "";
+  let input: { text?: string; url?: string } = {};
+  if (type.includes("json")) {
+    const body = await c.req.json().catch(() => null);
+    if (body && typeof body === "object") input = body as { text?: string; url?: string };
+  } else {
+    input = { text: await c.req.text().catch(() => "") };
+  }
+  if (q.url && !input.url) input.url = q.url;
+  try {
+    const r = await recordShare(input);
+    return c.json({ ok: true, ...r });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
 app.post("/api/events", async (c) => {
   const q = c.req.query();
   if (!checkDeviceToken(c.req.header("authorization")) && !checkRawToken(q.token)) return c.json({ error: "unauthorized" }, 401);

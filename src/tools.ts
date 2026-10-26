@@ -4,6 +4,7 @@ import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
 import { activitySummary, deviceEnabled, userTz } from "./device.ts";
 import * as db from "./db.ts";
 import { XhsError, xhsEnabled, xhsFeed, xhsMe, xhsNote, xhsSearch } from "./xhs.ts";
+import { describeShares } from "./share.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
 
 export interface Tool {
@@ -219,6 +220,18 @@ const xhsTools: Tool[] = [
   },
 ];
 
+// ---- 她分享给你的东西 ----
+const shareTool: Tool = {
+  def: {
+    name: "shared_items",
+    description: "看她最近用快捷指令从抖音、小红书、B站等 app 分享给你的内容（标题、简介、她分享时的文字、链接）。她说「刚分享给你的」「我发你的那个视频」「我最近刷的」时用。",
+    strict: true,
+    input_schema: { type: "object", properties: { count: { type: "integer", enum: [3, 8, 20] } }, required: ["count"], additionalProperties: false },
+  },
+  run: async (input) => describeShares(Number(input.count) || 8) || "她最近没有分享过东西。",
+  label: () => "翻了翻她分享的东西",
+};
+
 // ---- 时钟：此刻的准确时间 ----
 const clockTool: Tool = {
   def: {
@@ -245,7 +258,7 @@ export const getTools = (): Tool[] => [
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),
   ...(wereadEnabled ? [wereadTool] : []),
-  ...(deviceEnabled ? [deviceTool] : []),
+  ...(deviceEnabled ? [deviceTool, shareTool] : []),
   ...(xhsEnabled ? xhsTools : []),
 ];
 export const findTool = (name: string) => getTools().find((t) => t.def.name === name);

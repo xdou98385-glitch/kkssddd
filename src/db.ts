@@ -42,6 +42,15 @@ db.exec(`
     detail TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
+  CREATE TABLE IF NOT EXISTS shares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    platform TEXT NOT NULL,
+    url TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    meta_title TEXT NOT NULL DEFAULT '',
+    meta_desc TEXT NOT NULL DEFAULT ''
+  );
   CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL DEFAULT '',
@@ -242,6 +251,14 @@ export function latestMessage(): { role: "user" | "assistant"; created_at: numbe
     | { role: "user" | "assistant"; created_at: number }
     | undefined;
 }
+
+// ---- 她分享给 Claude 的东西（抖音、小红书等的分享文字和链接）----
+export interface Share { id: number; at: number; platform: string; url: string; text: string; meta_title: string; meta_desc: string }
+export function addShare(s: Omit<Share, "id" | "at">): number {
+  return Number(db.prepare("INSERT INTO shares (at, platform, url, text, meta_title, meta_desc) VALUES (?, ?, ?, ?, ?, ?)").run(now(), s.platform, s.url, s.text, s.meta_title, s.meta_desc).lastInsertRowid);
+}
+export const recentShares = (limit: number, since = 0) =>
+  db.prepare("SELECT * FROM shares WHERE at >= ? ORDER BY id DESC LIMIT ?").all(since, limit) as Share[];
 
 // ---- 电台节目（独立存放，不进聊天记录）----
 export interface Episode {

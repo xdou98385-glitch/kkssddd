@@ -2,12 +2,19 @@ import type Anthropic from "@anthropic-ai/sdk";
 import * as db from "./db.ts";
 import { summarize } from "./claude.ts";
 import { readImage } from "./uploads.ts";
-import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, WEREAD_GUIDE, XHS_GUIDE } from "./persona.ts";
+import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, SHARE_GUIDE, WEREAD_GUIDE, XHS_GUIDE } from "./persona.ts";
 import { coreMemoryBlock } from "./tools.ts";
 import { memosEnabled } from "./memos.ts";
 import { wereadEnabled } from "./weread.ts";
 import { deviceEnabled, userTz } from "./device.ts";
 import { xhsEnabled } from "./xhs.ts";
+import { describeShares } from "./share.ts";
+
+/** 24 小时内她分享过的东西，最多 5 条，让它能自然接话 */
+function recentSharesBlock(): string {
+  const t = describeShares(5, Date.now() - 24 * 3600_000);
+  return t ? `她最近分享给你的（24 小时内）：\n${t}` : "";
+}
 
 /** 系统提示词：人设 + 各功能的使用说明 + 核心记忆 + 更早对话的摘要。聊天和主动消息共用。 */
 export async function buildSystem(conv: db.Conversation): Promise<string> {
@@ -18,8 +25,10 @@ export async function buildSystem(conv: db.Conversation): Promise<string> {
     memosEnabled ? MEMORY_GUIDE : "",
     wereadEnabled ? WEREAD_GUIDE : "",
     deviceEnabled ? DEVICE_GUIDE : "",
+    deviceEnabled ? SHARE_GUIDE : "",
     xhsEnabled ? XHS_GUIDE : "",
     await coreMemoryBlock(),
+    deviceEnabled ? recentSharesBlock() : "",
     conv.summary ? `此前对话的摘要（更早的内容已不在上下文里）：\n${conv.summary}` : "",
   ]
     .filter(Boolean)
