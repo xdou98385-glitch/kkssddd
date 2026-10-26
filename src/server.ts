@@ -293,7 +293,7 @@ app.post("/api/connections/:group/test", async (c) => {
 
 // 小红书登录二维码：用小红书 app 扫一下
 app.get("/api/connections/xhs/qrcode", async (c) => {
-  try { return c.json(await xhsQrcode()); } catch (err) { return c.json({ error: (err as Error).message }, 502); }
+  try { return c.json(await xhsQrcode(c.req.query("force") === "1")); } catch (err) { return c.json({ error: (err as Error).message }, 502); }
 });
 
 // 通话：一轮 = 上传她说的一段录音（或 X-Call-Start 表示刚接通）→ 识别 → Claude 回 → 返回文字，音频走 /api/tts/:id

@@ -705,16 +705,52 @@ function connGroup(g) {
     const img = document.createElement("img");
     img.className = "conn-qr";
     img.hidden = true;
+    const tip = document.createElement("p");
+    tip.className = "memory-status";
+    let timer = null, poll = null;
+    const stop = () => { clearInterval(timer); clearInterval(poll); timer = poll = null; };
+    // 二维码要在电脑上显示，用手机里的小红书 app「扫一扫」；手机自己扫自己屏幕的话，截图再从相册扫。
     qr.onclick = async () => {
+      if (qr.disabled) return;
+      stop();
+      qr.disabled = true;
+      img.hidden = true;
+      tip.classList.remove("bad");
+      tip.textContent = "生成中，要开浏览器，可能要十几秒到半分钟。别重复点，重复点会把前一张作废。";
       try {
         const r = await api("/connections/xhs/qrcode");
-        if (r.loggedIn) { toast("已经登录了"); return; }
+        if (r.loggedIn) { tip.textContent = "已经登录了，不用扫码。"; qr.disabled = false; return; }
         img.src = r.img;
         img.hidden = false;
-        toast("用小红书 app 扫一下，扫完点「保存并测试」");
-      } catch (err) { toast(err.message); }
+        let left = r.expiresIn;
+        const show = () => { tip.textContent = `用小红书 app 扫一扫，约 ${left} 秒内有效。扫完不用再点什么，这里会自动检查。`; };
+        show();
+        timer = setInterval(() => {
+          left -= 1;
+          if (left <= 0) { stop(); img.hidden = true; tip.textContent = "二维码过期了。需要的话再点一次「登录二维码」。"; tip.classList.add("bad"); qr.disabled = false; return; }
+          show();
+        }, 1000);
+        // 自动检查有没有扫成功（每 6 秒一次，别太勤，那边是个小浏览器）
+        poll = setInterval(async () => {
+          try {
+            const t = await api("/connections/xhs/test", { method: "POST" });
+            if (t.ok) {
+              stop();
+              img.hidden = true;
+              qr.disabled = false;
+              tip.textContent = "登录成功。" + (t.detail ? " " + t.detail : "");
+              connMsg[g.id] = { text: "连接正常。" + (t.detail ? " " + t.detail : ""), bad: false };
+            }
+          } catch { /* 下一轮再试 */ }
+        }, 6000);
+        qr.disabled = false; // 仍然可以点；点了会重新要一张（要新一张的时候才点）
+      } catch (err) {
+        tip.textContent = "没拿到二维码：" + err.message;
+        tip.classList.add("bad");
+        qr.disabled = false;
+      }
     };
-    wrap.append(qr, img);
+    wrap.append(qr, img, tip);
   }
   const status = document.createElement("p");
   status.className = "memory-status";

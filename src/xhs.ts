@@ -127,8 +127,24 @@ export async function xhsStatus(): Promise<{ enabled: boolean; ok?: boolean; err
   }
 }
 
-export async function xhsQrcode(): Promise<{ img?: string; timeout?: string; loggedIn: boolean }> {
-  const d = await call("/api/v1/login/qrcode", {}, 60_000, false);
-  const s = d.data ?? d;
-  return { img: s.img, timeout: s.timeout, loggedIn: Boolean(s.is_logged_in) };
+// 小红书那边每要一次二维码，就新开一个浏览器等扫码，并且把上一个二维码作废。
+// 所以这里同一时间只允许一个请求在路上，QR_TTL 秒内重复点的话直接返回同一张，不能再去要新的。
+const QR_TTL = 200;
+let qrCache: { at: number; img?: string; loggedIn: boolean } | null = null;
+let qrInflight: Promise<{ img?: string; loggedIn: boolean; expiresIn: number }> | null = null;
+
+export async function xhsQrcode(force = false): Promise<{ img?: string; loggedIn: boolean; expiresIn: number; reused: boolean }> {
+  if (!force && qrCache && !qrCache.loggedIn && Date.now() - qrCache.at < QR_TTL * 1000) {
+    return { img: qrCache.img, loggedIn: false, expiresIn: Math.max(0, QR_TTL - Math.round((Date.now() - qrCache.at) / 1000)), reused: true };
+  }
+  if (!qrInflight) {
+    qrInflight = call("/api/v1/login/qrcode", {}, 90_000, false)
+      .then((d) => {
+        const s = d.data ?? d;
+        qrCache = { at: Date.now(), img: s.img, loggedIn: Boolean(s.is_logged_in) };
+        return { img: s.img as string | undefined, loggedIn: Boolean(s.is_logged_in), expiresIn: QR_TTL };
+      })
+      .finally(() => { qrInflight = null; });
+  }
+  return { ...(await qrInflight), reused: false };
 }
