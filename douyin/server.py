@@ -92,10 +92,22 @@ def awemes_from(d: dict) -> list:
     return lst
 
 
+SESSION_KEYS = ("sessionid", "sessionid_ss", "sid_tt", "sid_guard", "uid_tt")
+
+
+def has_session(auth) -> bool:
+    """cookie 里有没有登录凭据。游客 cookie 也能读推荐流，但搜索/点赞/评论都会被拒，所以单独查"""
+    ck = getattr(auth, "cookie", None) or {}
+    return any(k in ck for k in SESSION_KEYS[:4])
+
+
+NOT_LOGGED_IN = "这份 cookie 里没有登录凭据（sessionid / sid_guard 都没有），是游客 cookie：能看推荐流，但搜索、点赞、评论都不行。请在【已登录】的抖音网页里重新取一次 cookie"
+
+
 def whoami(auth, body):
     uid = DouyinAPI.get_my_uid(auth)
     sec = DouyinAPI.get_my_sec_uid(auth)
-    out = {"uid": uid, "sec_uid": sec}
+    out = {"uid": uid, "sec_uid": sec, "has_session": has_session(auth)}
     try:
         info = (DouyinAPI.get_user_info(auth, f"https://www.douyin.com/user/{sec}") or {}).get("user") or {}
         out.update(nickname=info.get("nickname"), followers=info.get("follower_count"), following=info.get("following_count"), works=info.get("aweme_count"))
@@ -172,7 +184,10 @@ def probe(auth, body):
             out[name] = {"ok": False, "error": f"{type(e).__name__}: {e}"[:300]}
         time.sleep(1.5)
 
-    run("whoami", lambda: {"n": 1})
+    if has_session(auth):
+        run("whoami", lambda: {"n": 1})
+    else:
+        out["whoami"] = {"ok": False, "error": NOT_LOGGED_IN}
     items, via, errs = read_feed(auth, 3)
     out["feed"] = {"ok": bool(items), "n": len(items), "via": via, "error": " | ".join(errs) if not items else None}
     time.sleep(1.5)

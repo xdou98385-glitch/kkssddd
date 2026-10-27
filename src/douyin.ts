@@ -276,6 +276,7 @@ export async function douyinStatus(): Promise<{ enabled: boolean; ok?: boolean; 
   if (!douyinEnabled) return { enabled: false };
   try {
     const d = await call("/whoami", {}, false);
+    if (d.has_session === false) return { enabled: true, ok: false, error: "这份 cookie 里没有登录凭据（sessionid / sid_guard），是游客 cookie：能看推荐流，但搜索、点赞、评论都不行。请在【已登录】的抖音网页里重新取一次 cookie（取之前先确认页面右上角是你的头像）" };
     return { enabled: true, ok: true, detail: `cookie 有效。账号：${d.nickname || "（昵称没读到）"}${d.followers != null ? ` · 粉丝 ${d.followers}` : ""}。今天已操作 ${usedToday()}/${DAILY} 次。${d.note ? " " + d.note : ""}` };
   } catch (err) {
     return { enabled: true, ok: false, error: (err as Error).message };
