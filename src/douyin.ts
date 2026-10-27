@@ -198,19 +198,24 @@ function writeGuard(): void {
 }
 export async function dyLike(ref: string, undo: boolean): Promise<string> {
   writeGuard();
-  await call("/digg", { id: await resolveWorkRef(ref), undo });
+  await call("/digg", { id: await resolveWorkRef(ref), undo }, true, browserCreds(false));
   return undo ? "已取消点赞" : "已点赞";
 }
 export async function dyCollect(ref: string, undo: boolean): Promise<string> {
   writeGuard();
-  await call("/collect", { id: await resolveWorkRef(ref), undo });
+  await call("/collect", { id: await resolveWorkRef(ref), undo }, true, browserCreds(false));
   return undo ? "已取消收藏" : "已收藏";
 }
 /** 浏览器凭据：控制台脚本打包出来的 JSON（localStorage 里 security-sdk 的几项），只在发评论时带给小服务 */
-function browserCreds(): unknown {
+function browserCreds(required = true): unknown {
   const raw = cfg("DOUYIN_BROWSER").trim();
-  if (!raw) throw new DouyinError("还没填「浏览器凭据」，发评论需要它（设置 → 连接 → 抖音）");
-  try { return JSON.parse(raw); } catch { throw new DouyinError("「浏览器凭据」不是有效的 JSON，请重新用控制台脚本取一遍"); }
+  const dtrait = cfg("DOUYIN_DTRAIT").trim();
+  let obj: Record<string, unknown> = {};
+  if (raw) {
+    try { obj = JSON.parse(raw); } catch { throw new DouyinError("「浏览器凭据」不是有效的 JSON，请重新用控制台脚本取一遍"); }
+  } else if (required) throw new DouyinError("还没填「浏览器凭据」，发评论需要它（设置 → 连接 → 抖音）");
+  if (dtrait) obj = { ...obj, dtrait_blob: dtrait };
+  return Object.keys(obj).length ? obj : undefined;
 }
 /** 评论只起草：存起来等她确认 */
 export async function dyCommentDraft(ref: string, text: string, replyId: string): Promise<string> {
@@ -240,7 +245,7 @@ export async function runPending(id: number): Promise<string> {
   writeGuard();
   db.setPendingStatus(id, "sending");
   try {
-    if (p.kind === "dy_dm") await call("/dm_send", { to_uid: payload.to_uid, text: payload.text });
+    if (p.kind === "dy_dm") await call("/dm_send", { to_uid: payload.to_uid, text: payload.text }, true, browserCreds(false));
     else await call("/comment_post", { id: payload.id, text: payload.text, reply_id: payload.reply_id }, true, creds);
   } catch (err) {
     db.setPendingStatus(id, "pending"); // 失败了留着，她可以再试或丢掉

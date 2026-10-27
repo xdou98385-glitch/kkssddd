@@ -69,6 +69,7 @@ export const GROUPS: Group[] = [
       { name: "DOUYIN_COOKIE", label: "Cookie", secret: true },
       { name: "DOUYIN_URL", label: "小服务地址", secret: false, placeholder: "http://127.0.0.1:18070（不用改）" },
       { name: "DOUYIN_BROWSER", label: "浏览器凭据（发评论用）", secret: true },
+      { name: "DOUYIN_DTRAIT", label: "设备特征（点赞/评论被拒时填）", secret: true },
       { name: "DOUYIN_ACTIONS", label: "允许代我操作", secret: false, placeholder: "填 on 开启；留空 = 只读" },
     ],
   },

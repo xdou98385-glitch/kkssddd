@@ -30,13 +30,21 @@ def parse_creds(raw) -> dict:
         raw = json.loads(raw)
     if not isinstance(raw, dict) or not raw:
         return {}
+    out = {}
+    if raw.get("dtrait_blob"):
+        out["dtrait_blob"] = str(raw["dtrait_blob"]).strip()
     wp = next((v for k, v in raw.items() if k.endswith("web_protect")), None)
     ck = next((v for k, v in raw.items() if "crypt_sdk" in k), None)
+    if wp is None and ck is None:
+        if out:
+            return out  # 只有设备特征（点赞/收藏够用）
+        raise ValueError("浏览器凭据里缺东西。我看到的键名：" + "、".join(sorted(k for k in raw.keys() if k != "dtrait_blob"))[:300])
     if wp is None or ck is None:
-        raise ValueError("浏览器凭据里缺东西。我看到的键名：" + "、".join(sorted(raw.keys()))[:300])
+        raise ValueError("浏览器凭据里缺一半。我看到的键名：" + "、".join(sorted(raw.keys()))[:300])
     p = json.loads(json.loads(wp)["data"])
     k = json.loads(json.loads(ck)["data"])
-    return {"ticket": p["ticket"], "ts_sign": p["ts_sign"], "client_cert": p["client_cert"], "private_key": k["ec_privateKey"]}
+    out.update(ticket=p["ticket"], ts_sign=p["ts_sign"], client_cert=p["client_cert"], private_key=k["ec_privateKey"])
+    return out
 
 
 def get_auth(cookie: str, creds=None) -> DouyinAuth:
@@ -179,8 +187,11 @@ def search(auth, body):
         raise ValueError("没有搜索词")
     n = max(1, min(int(body.get("count") or 10), 20))
     sort = {"综合": "0", "最多点赞": "1", "最新": "2"}.get(str(body.get("sort") or "综合"), "0")
-    works = DouyinAPI.search_some_general_work(auth, q, n, sort, "0")
-    return {"items": [brief(w["aweme_info"]) for w in works if w.get("aweme_info")][:n]}
+    d = DouyinAPI.search_general_work(auth, q, sort, "0", "0")
+    if "data" not in d:  # 被拒时没有 data：把抖音说的原因带回来，别只报 KeyError
+        extra = {k: d.get(k) for k in ("status_code", "status_msg", "search_nil_info") if d.get(k) not in (None, "")}
+        raise RuntimeError(f"搜索被拒：{json.dumps(extra, ensure_ascii=False)[:250]}（字段：{','.join(sorted(d.keys())[:10])}）")
+    return {"items": [brief(w["aweme_info"]) for w in d["data"] if w.get("aweme_info")][:n]}
 
 
 def work(auth, body):
