@@ -321,7 +321,9 @@ def comment_post(auth, body):
         raise ValueError("评论内容是空的")
     r = DouyinAPI.publish_comment(auth, str(body["id"]), text, str(body.get("reply_id") or ""))
     if r.get("status_code") != 0:
-        raise RuntimeError(f"抖音没接受这条评论（status_code={r.get('status_code')}，{str(r.get('status_msg') or '')[:80]}）")
+        detail = json.dumps({k: v for k, v in r.items() if k != "comment"}, ensure_ascii=False)[:350]
+        print(f"评论被拒：{detail}", flush=True)
+        raise RuntimeError(f"抖音没接受这条评论。完整回应：{detail}")
     return {"done": True}
 
 
