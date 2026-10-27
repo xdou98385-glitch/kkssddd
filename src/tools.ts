@@ -3,7 +3,7 @@ import { coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
 import { activitySummary, deviceEnabled, userTz } from "./device.ts";
 import * as db from "./db.ts";
-import { douyinActionsOn, douyinEnabled, dyCollect, dyCollects, dyComments, dyDmDraft, dyDmListen, dyFeed, dyFollowers, dyFollowing, dyLike, dyLikes, dyNotices, dySearch, dyWork } from "./douyin.ts";
+import { douyinActionsOn, douyinEnabled, dyCollect, dyCollects, dyCommentDraft, dyComments, dyDmDraft, dyDmListen, dyFeed, dyFollowers, dyFollowing, dyLike, dyLikes, dyNotices, dySearch, dyWork } from "./douyin.ts";
 import { XhsError, xhsEnabled, xhsFeed, xhsMe, xhsNote, xhsSearch } from "./xhs.ts";
 import { describeShares } from "./share.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
@@ -287,6 +287,15 @@ const douyinWriteTools: Tool[] = [
     },
     run: (input) => dyCollect(String(input.ref ?? ""), !!input.undo),
     label: (input) => (input.undo ? "取消收藏了一条抖音" : "收藏了一条抖音"),
+  },
+  {
+    def: {
+      name: "dy_comment_draft",
+      description: "起草一条抖音评论（或回复某条评论）。不会直接发：草稿出现在聊天界面，她点「发送」才真发。ref 是作品 id 或链接；回复评论时 reply_id 填 dy_comments 返回的 cid，否则留空。",
+      input_schema: { type: "object", properties: { ref: { type: "string" }, text: { type: "string", description: "评论内容，140 字以内" }, reply_id: { type: "string", description: "要回复的评论 cid，不回复就空字符串" } }, required: ["ref", "text", "reply_id"], additionalProperties: false },
+    },
+    run: async (input) => dyCommentDraft(String(input.ref ?? ""), String(input.text ?? ""), String(input.reply_id ?? "")),
+    label: () => "起草了一条抖音评论，等她确认",
   },
   {
     def: {

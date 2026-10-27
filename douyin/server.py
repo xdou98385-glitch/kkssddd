@@ -1,7 +1,7 @@
 """抖音（只读）小服务。把 cv-cat/DouYin_Spider 里「看」的那几个接口包成几个本机 HTTP 接口，给聊天网站的 Claude 用。
 
 - 读：推荐流、搜索、作品详情 + 评论、点赞列表、收藏夹、关注/粉丝、通知、听新私信。
-- 写（聊天网站那边有总开关和确认）：点赞、收藏、发私信。发评论要浏览器会话凭据、发布作品太重，没接。
+- 写（聊天网站那边有总开关和确认）：点赞、收藏、发私信。发评论要浏览器票据（creds）。发布作品没接。
 - cookie 不存在这里：每次请求由聊天网站带过来（只在本机回环地址上走），这个服务自己什么都不落盘。
 - 一次只处理一个请求（锁），避免短时间内连着打抖音。
 """
@@ -23,16 +23,33 @@ AUTHS: dict[str, tuple[DouyinAuth, float]] = {}
 AUTH_TTL = 30 * 60
 
 
-def get_auth(cookie: str) -> DouyinAuth:
+def parse_creds(raw) -> dict:
+    """浏览器 localStorage 里 security-sdk 的两项 → 票据四件套。
+    raw 是 {键名: 值} 的字典（控制台脚本打包出来的）。键名只按后缀认，认不出就把看到的键名（不含值）报回去。"""
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    if not isinstance(raw, dict) or not raw:
+        return {}
+    wp = next((v for k, v in raw.items() if k.endswith("web_protect")), None)
+    ck = next((v for k, v in raw.items() if "crypt_sdk" in k), None)
+    if wp is None or ck is None:
+        raise ValueError("浏览器凭据里缺东西。我看到的键名：" + "、".join(sorted(raw.keys()))[:300])
+    p = json.loads(json.loads(wp)["data"])
+    k = json.loads(json.loads(ck)["data"])
+    return {"ticket": p["ticket"], "ts_sign": p["ts_sign"], "client_cert": p["client_cert"], "private_key": k["ec_privateKey"]}
+
+
+def get_auth(cookie: str, creds=None) -> DouyinAuth:
     cookie = (cookie or "").strip()
     if not cookie:
         raise ValueError("没有 cookie")
-    key = hashlib.sha256(cookie.encode()).hexdigest()
+    extra = parse_creds(creds) if creds else {}
+    key = hashlib.sha256((cookie + json.dumps(extra, sort_keys=True)).encode()).hexdigest()
     hit = AUTHS.get(key)
     if hit and time.time() - hit[1] < AUTH_TTL:
         return hit[0]
     AUTHS.clear()  # 只留当前这一个，换了 cookie 旧的就丢
-    auth = DouyinAuth.open(cookie, login_type="cookie", bootstrap_creator=False)
+    auth = DouyinAuth.open(cookie, login_type="cookie", bootstrap_creator=False, **extra)
     AUTHS[key] = (auth, time.time())
     return auth
 
@@ -297,6 +314,17 @@ def collect(auth, body):
     return {"done": True}
 
 
+# ---------- 评论（要浏览器票据） ----------
+def comment_post(auth, body):
+    text = str(body["text"]).strip()
+    if not text:
+        raise ValueError("评论内容是空的")
+    r = DouyinAPI.publish_comment(auth, str(body["id"]), text, str(body.get("reply_id") or ""))
+    if r.get("status_code") != 0:
+        raise RuntimeError(f"抖音没接受这条评论（status_code={r.get('status_code')}，{str(r.get('status_msg') or '')[:80]}）")
+    return {"done": True}
+
+
 # ---------- 私信 ----------
 def dm_send(auth, body):
     to = int(body["to_uid"])
@@ -349,7 +377,7 @@ def dm_recv(auth, body):
 
 ROUTES = {"/whoami": whoami, "/feed": feed, "/search": search, "/work": work, "/likes": likes, "/probe": probe,
           "/followers": followers, "/following": following, "/collects": collects, "/notices": notices, "/comments": comments,
-          "/digg": digg, "/collect": collect, "/dm_send": dm_send, "/dm_recv": dm_recv}
+          "/comment_post": comment_post, "/digg": digg, "/collect": collect, "/dm_send": dm_send, "/dm_recv": dm_recv}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -376,7 +404,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"ok": False, "error": "请求体不是 JSON"})
         try:
             with LOCK:
-                data = fn(get_auth(body.get("cookie")), body)
+                data = fn(get_auth(body.get("cookie"), body.get("creds")), body)
             self._send(200, {"ok": True, "data": data})
         except Exception as e:  # 风控、cookie 失效、接口改了……都原样把原因带回去，别吞
             print(f"{self.path} 出错：{type(e).__name__}: {e}", flush=True)

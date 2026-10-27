@@ -50,7 +50,7 @@ function queued<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function call(path: string, body: Record<string, unknown> = {}, countIt = true): Promise<any> {
+async function call(path: string, body: Record<string, unknown> = {}, countIt = true, creds?: unknown): Promise<any> {
   const cookie = cookieValue();
   if (!cookie) throw new DouyinError("抖音还没配置 cookie");
   if (countIt && usedToday() >= DAILY) throw new DouyinError(`今天对抖音的操作已经到上限了（${DAILY} 次），明天再来，免得账号被盯上`);
@@ -60,7 +60,7 @@ async function call(path: string, body: Record<string, unknown> = {}, countIt = 
       res = await fetch(base() + path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, cookie }),
+        body: JSON.stringify({ ...body, cookie, ...(creds ? { creds } : {}) }),
         signal: AbortSignal.timeout(90_000),
       });
     } catch (err) {
@@ -206,6 +206,22 @@ export async function dyCollect(ref: string, undo: boolean): Promise<string> {
   await call("/collect", { id: await resolveWorkRef(ref), undo });
   return undo ? "已取消收藏" : "已收藏";
 }
+/** 浏览器凭据：控制台脚本打包出来的 JSON（localStorage 里 security-sdk 的几项），只在发评论时带给小服务 */
+function browserCreds(): unknown {
+  const raw = cfg("DOUYIN_BROWSER").trim();
+  if (!raw) throw new DouyinError("还没填「浏览器凭据」，发评论需要它（设置 → 连接 → 抖音）");
+  try { return JSON.parse(raw); } catch { throw new DouyinError("「浏览器凭据」不是有效的 JSON，请重新用控制台脚本取一遍"); }
+}
+/** 评论只起草：存起来等她确认 */
+export async function dyCommentDraft(ref: string, text: string, replyId: string): Promise<string> {
+  if (!douyinActionsOn()) throw new DouyinError("设置里没打开「允许代我操作」，所以不能发评论");
+  browserCreds();
+  const t = text.trim().slice(0, 140);
+  if (!t) throw new DouyinError("评论内容是空的");
+  const id = await resolveWorkRef(ref);
+  const pid = db.addPending("dy_comment", `${replyId ? "回复评论" : "评论"}（作品 ${id}）：${t}`, { id, text: t, reply_id: replyId });
+  return `已起草，等她在聊天界面点「发送」确认后才会真发出去（草稿 #${pid}）。别说已经发了。`;
+}
 /** 私信只起草：存起来等她在聊天里确认，不会直接发 */
 export function dyDmDraft(toUid: string, toName: string, text: string): string {
   if (!douyinActionsOn()) throw new DouyinError("设置里没打开「允许代我操作」，所以不能发私信");
@@ -218,18 +234,20 @@ export function dyDmDraft(toUid: string, toName: string, text: string): string {
 export async function runPending(id: number): Promise<string> {
   const p = db.getPending(id);
   if (!p || p.status !== "pending") throw new DouyinError("这条草稿已经处理过了");
-  if (p.kind !== "dy_dm") throw new DouyinError("不认识的草稿类型");
-  const { to_uid, text } = JSON.parse(p.payload) as { to_uid: string; text: string };
+  if (p.kind !== "dy_dm" && p.kind !== "dy_comment") throw new DouyinError("不认识的草稿类型");
+  const payload = JSON.parse(p.payload) as { to_uid?: string; text: string; id?: string; reply_id?: string };
+  const creds = p.kind === "dy_comment" ? browserCreds() : undefined;
   writeGuard();
   db.setPendingStatus(id, "sending");
   try {
-    await call("/dm_send", { to_uid, text });
+    if (p.kind === "dy_dm") await call("/dm_send", { to_uid: payload.to_uid, text: payload.text });
+    else await call("/comment_post", { id: payload.id, text: payload.text, reply_id: payload.reply_id }, true, creds);
   } catch (err) {
     db.setPendingStatus(id, "pending"); // 失败了留着，她可以再试或丢掉
     throw err;
   }
   db.setPendingStatus(id, "done");
-  return "私信已发送";
+  return p.kind === "dy_dm" ? "私信已发送" : "评论已发送";
 }
 
 // ---- 设置页用 ----

@@ -88,6 +88,7 @@ const TOOL_LABELS = {
   dy_like: "给一条抖音点了赞",
   dy_collect: "收藏了一条抖音",
   dy_dm_draft: "起草了一条抖音私信，等她确认",
+  dy_comment_draft: "起草了一条抖音评论，等她确认",
   xhs_search: "搜了小红书",
   xhs_feed: "刷了眼小红书推荐",
   xhs_note: "点开了一条小红书笔记",

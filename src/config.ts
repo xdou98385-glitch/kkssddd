@@ -64,10 +64,11 @@ export const GROUPS: Group[] = [
     id: "douyin",
     probe: true,
     title: "抖音",
-    hint: "靠旁边的抖音小服务。需要你登录抖音网页版后的 cookie：在电脑浏览器登录 www.douyin.com，按 F12 → 网络(Network) → 筛选 Fetch/XHR → 点任意一个以 /aweme/v1/web/ 开头的请求 → 在「请求标头」里找到 Cookie，整串复制（要含 UIFID）。cookie 等于账号权限，只存在你自己的服务器上，这个页面不会再显示它。默认只读：推荐、搜索、作品和评论、点赞/收藏/关注/粉丝/通知、听新私信。「允许代我操作」填 on 后，Claude 可以直接点赞和收藏；发私信只会起草，必须你在聊天里点确认才发。发评论和发布作品要浏览器会话凭据，没接。",
+    hint: "靠旁边的抖音小服务。需要你登录抖音网页版后的 cookie：在电脑浏览器登录 www.douyin.com，按 F12 → 网络(Network) → 筛选 Fetch/XHR → 点任意一个以 /aweme/v1/web/ 开头的请求 → 在「请求标头」里找到 Cookie，整串复制（要含 UIFID）。cookie 等于账号权限，只存在你自己的服务器上，这个页面不会再显示它。默认只读：推荐、搜索、作品和评论、点赞/收藏/关注/粉丝/通知、听新私信。「允许代我操作」填 on 后，Claude 可以直接点赞和收藏；发私信只会起草，必须你在聊天里点确认才发。发评论还要填「浏览器凭据」（和 cookie 同一次登录取的）；发布作品没接。",
     fields: [
       { name: "DOUYIN_COOKIE", label: "Cookie", secret: true },
       { name: "DOUYIN_URL", label: "小服务地址", secret: false, placeholder: "http://127.0.0.1:18070（不用改）" },
+      { name: "DOUYIN_BROWSER", label: "浏览器凭据（发评论用）", secret: true },
       { name: "DOUYIN_ACTIONS", label: "允许代我操作", secret: false, placeholder: "填 on 开启；留空 = 只读" },
     ],
   },
