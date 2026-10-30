@@ -23,6 +23,8 @@ import { recordShare } from "./share.ts";
 import { douyinProbe, douyinStatus, runPending } from "./douyin.ts";
 import { musicStatus } from "./music.ts";
 import { weatherStatus } from "./weather.ts";
+import { calendarStatus } from "./calendar.ts";
+import { mailStatus } from "./mail.ts";
 import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
 import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
@@ -329,6 +331,8 @@ app.post("/api/connections/:group/test", async (c) => {
   if (id === "xhs") return c.json(await xhsStatus());
   if (id === "music") return c.json(await musicStatus());
   if (id === "weather") return c.json(await weatherStatus());
+  if (id === "calendar") return c.json(await calendarStatus());
+  if (id === "mail") return c.json(await mailStatus());
   if (id === "douyin") return c.json(c.req.query("deep") === "1" ? await douyinProbe() : await douyinStatus());
   const last = db.latestEvent();
   return c.json({ enabled: deviceEnabled, ok: deviceEnabled, detail: last ? `最近一条事件：${new Date(last.at).toLocaleString("zh-CN")}` : "口令已设置，还没收到过事件" });

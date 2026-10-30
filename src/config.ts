@@ -11,7 +11,7 @@ export interface Field {
   generate?: boolean; // 可以一键生成随机口令
 }
 export interface Group {
-  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music" | "weather";
+  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music" | "weather" | "calendar" | "mail";
   title: string;
   hint: string;
   fields: Field[];
@@ -58,6 +58,21 @@ export const GROUPS: Group[] = [
     fields: [
       { name: "XHS_URL", label: "地址", secret: false, placeholder: "http://127.0.0.1:18060" },
       { name: "XHS_TOKEN", label: "口令（可选）", secret: true },
+    ],
+  },
+  {
+    id: "calendar",
+    title: "日历（谷歌，只读）",
+    hint: "网页版 Google 日历 → 设置 → 左边点你的日历 → 滚到「集成日历」→ 复制「iCal 格式的私人地址」，粘贴到这里。这个地址等于钥匙，别发给别人。只能看日程，不能新建。",
+    fields: [{ name: "GCAL_ICS_URL", label: "iCal 私人地址", secret: true }],
+  },
+  {
+    id: "mail",
+    title: "邮箱（Gmail，只读）",
+    hint: "只看收件箱，不能发信、删信，看了也不会标成已读。需要「应用专用密码」：Google 账号先开两步验证，再打开 myaccount.google.com/apppasswords 生成一个 16 位密码（不是你的登录密码）。邮件内容会被 Claude 读到，不想让它看的邮箱别接主邮箱。",
+    fields: [
+      { name: "GMAIL_USER", label: "Gmail 地址", secret: false, placeholder: "xxx@gmail.com" },
+      { name: "GMAIL_APP_PASSWORD", label: "应用专用密码", secret: true },
     ],
   },
   {
