@@ -11,7 +11,7 @@ export interface Field {
   generate?: boolean; // 可以一键生成随机口令
 }
 export interface Group {
-  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music";
+  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music" | "weather";
   title: string;
   hint: string;
   fields: Field[];
@@ -59,6 +59,12 @@ export const GROUPS: Group[] = [
       { name: "XHS_URL", label: "地址", secret: false, placeholder: "http://127.0.0.1:18060" },
       { name: "XHS_TOKEN", label: "口令（可选）", secret: true },
     ],
+  },
+  {
+    id: "weather",
+    title: "天气和位置",
+    hint: "填一个城市，Claude 就能查天气。想让它知道你现在在哪（出门、换城市后天气自动跟着走），需要在 iPhone 快捷指令里设一个自动化，定时把位置报上来，我给你步骤。位置只精确到约 1 公里，6 小时没更新就退回这里填的城市。",
+    fields: [{ name: "WEATHER_CITY", label: "城市", secret: false, placeholder: "大阪" }],
   },
   {
     id: "music",

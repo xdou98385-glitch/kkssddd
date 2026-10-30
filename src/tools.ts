@@ -6,6 +6,7 @@ import * as db from "./db.ts";
 import { douyinActionsOn, douyinEnabled, dyCollect, dyCollects, dyCommentDraft, dyComments, dyDmDraft, dyDmListen, dyFeed, dyFollowers, dyFollowing, dyLike, dyLikes, dyNotices, dySearch, dyWork } from "./douyin.ts";
 import { XhsError, xhsEnabled, xhsFeed, xhsMe, xhsNote, xhsSearch } from "./xhs.ts";
 import { describeShares } from "./share.ts";
+import { weatherEnabled, weatherText, locationText } from "./weather.ts";
 import { musicEnabled, musicNow, musicRecent, musicTop } from "./music.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
 
@@ -392,6 +393,11 @@ const clockTool: Tool = {
 };
 
 // 每次取都重新算：设置页里开关某个连接后，立刻生效
+const weatherTools: Tool[] = [
+  { def: { name: "weather", description: "查她那边现在的天气和未来三天预报（用她手机最近报的位置，没有就用设置里的城市）。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: () => weatherText(), label: () => "查了天气" },
+  { def: { name: "where_am_i", description: "看她大概在哪（手机最近报的位置，约一公里精度）。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: () => locationText(), label: () => "看了眼她大概在哪" },
+];
+
 const musicTools: Tool[] = [
   { def: { name: "music_now", description: "看她现在正在听什么歌（来自 Last.fm，可能有几十秒延迟）。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: () => musicNow(), label: () => "看了眼她在听什么" },
   { def: { name: "music_recent", description: "看她最近听过的 15 首歌。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: () => musicRecent(), label: () => "翻了翻她最近听的歌" },
@@ -419,6 +425,7 @@ export const getTools = (): Tool[] => capStrict([
   ...(deviceEnabled ? [deviceTool, shareTool] : []),
   ...(xhsEnabled ? xhsTools : []),
   ...(musicEnabled ? musicTools : []),
+  ...(weatherEnabled ? weatherTools : []),
   ...(douyinEnabled ? douyinTools : []),
   ...(douyinEnabled && douyinActionsOn() ? douyinWriteTools : []),
 ]);

@@ -40,6 +40,12 @@ export function recordEvent(body: any): string | null {
   const kind = clip(body?.kind, 40);
   if (!kind || !/^[a-z0-9_:-]+$/i.test(kind)) return "kind 必填，只能是字母数字和 _ - :";
   const at = Number(body?.at);
+  if (kind === "location") {
+    // 位置只留两位小数（约 1 公里），格式不对就拒绝
+    const m = String(body?.detail ?? "").match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+    if (!m || Math.abs(Number(m[1])) > 90 || Math.abs(Number(m[2])) > 180) return "location 的 detail 要写成 纬度,经度，例如 34.69,135.50";
+    body = { ...body, detail: `${Number(m[1]).toFixed(2)},${Number(m[2]).toFixed(2)}` };
+  }
   db.addEvent(kind, clip(body?.app, 60), clip(body?.detail, 200), Number.isFinite(at) && at > 1e12 ? at : undefined);
   return null;
 }
@@ -54,6 +60,7 @@ const KIND_TEXT: Record<string, (e: db.DeviceEvent) => string> = {
   wake: () => "起床（关了闹钟）",
   arrive: (e) => `到达 ${e.app ?? e.detail ?? "某地"}`,
   leave: (e) => `离开 ${e.app ?? e.detail ?? "某地"}`,
+  location: () => "位置更新（想知道在哪用 where_am_i）",
 };
 
 function fmtTime(ms: number, tz: string): string {
