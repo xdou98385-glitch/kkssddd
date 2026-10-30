@@ -11,7 +11,7 @@ export interface Field {
   generate?: boolean; // 可以一键生成随机口令
 }
 export interface Group {
-  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin";
+  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music";
   title: string;
   hint: string;
   fields: Field[];
@@ -58,6 +58,15 @@ export const GROUPS: Group[] = [
     fields: [
       { name: "XHS_URL", label: "地址", secret: false, placeholder: "http://127.0.0.1:18060" },
       { name: "XHS_TOKEN", label: "口令（可选）", secret: true },
+    ],
+  },
+  {
+    id: "music",
+    title: "听歌（Last.fm）",
+    hint: "让 Claude 知道你在听什么。步骤：1) 注册 last.fm 账号；2) 在 Spotify（免费号也行）设置 → 第三方应用 里连上 Last.fm；3) 打开 last.fm/api/account/create 随便填个名字，拿到 API Key；4) 把 API Key 和你的 Last.fm 用户名填在这里。只读。",
+    fields: [
+      { name: "LASTFM_API_KEY", label: "API Key", secret: true },
+      { name: "LASTFM_USER", label: "Last.fm 用户名", secret: false },
     ],
   },
   {

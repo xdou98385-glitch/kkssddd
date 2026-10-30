@@ -2,13 +2,14 @@ import type Anthropic from "@anthropic-ai/sdk";
 import * as db from "./db.ts";
 import { summarize } from "./claude.ts";
 import { readImage } from "./uploads.ts";
-import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, SHARE_GUIDE, WEREAD_GUIDE, XHS_GUIDE, DOUYIN_GUIDE } from "./persona.ts";
+import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, SHARE_GUIDE, WEREAD_GUIDE, XHS_GUIDE, DOUYIN_GUIDE, MUSIC_GUIDE } from "./persona.ts";
 import { coreMemoryBlock } from "./tools.ts";
 import { memosEnabled } from "./memos.ts";
 import { wereadEnabled } from "./weread.ts";
 import { deviceEnabled, userTz } from "./device.ts";
 import { xhsEnabled } from "./xhs.ts";
 import { douyinEnabled } from "./douyin.ts";
+import { musicEnabled } from "./music.ts";
 import { describeShares } from "./share.ts";
 
 /** 24 小时内她分享过的东西，最多 5 条，让它能自然接话 */
@@ -29,6 +30,7 @@ export async function buildSystem(conv: db.Conversation): Promise<string> {
     deviceEnabled ? SHARE_GUIDE : "",
     xhsEnabled ? XHS_GUIDE : "",
     douyinEnabled ? DOUYIN_GUIDE : "",
+    musicEnabled ? MUSIC_GUIDE : "",
     await coreMemoryBlock(),
     deviceEnabled ? recentSharesBlock() : "",
     conv.summary ? `此前对话的摘要（更早的内容已不在上下文里）：\n${conv.summary}` : "",

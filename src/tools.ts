@@ -6,6 +6,7 @@ import * as db from "./db.ts";
 import { douyinActionsOn, douyinEnabled, dyCollect, dyCollects, dyCommentDraft, dyComments, dyDmDraft, dyDmListen, dyFeed, dyFollowers, dyFollowing, dyLike, dyLikes, dyNotices, dySearch, dyWork } from "./douyin.ts";
 import { XhsError, xhsEnabled, xhsFeed, xhsMe, xhsNote, xhsSearch } from "./xhs.ts";
 import { describeShares } from "./share.ts";
+import { musicEnabled, musicNow, musicRecent, musicTop } from "./music.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
 
 export interface Tool {
@@ -391,6 +392,16 @@ const clockTool: Tool = {
 };
 
 // 每次取都重新算：设置页里开关某个连接后，立刻生效
+const musicTools: Tool[] = [
+  { def: { name: "music_now", description: "看她现在正在听什么歌（来自 Last.fm，可能有几十秒延迟）。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: () => musicNow(), label: () => "看了眼她在听什么" },
+  { def: { name: "music_recent", description: "看她最近听过的 15 首歌。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: () => musicRecent(), label: () => "翻了翻她最近听的歌" },
+  {
+    def: { name: "music_top", description: "看她某段时间最常听的歌手和歌曲。", input_schema: { type: "object", properties: { period: { type: "string", enum: ["7day", "1month", "3month", "12month", "overall"] } }, required: ["period"], additionalProperties: false } },
+    run: (input) => musicTop(String(input.period ?? "1month")),
+    label: () => "看了她常听的歌",
+  },
+];
+
 // API 最多允许 20 个 strict 工具；超出的排在后面的去掉 strict（参数照样有 schema，只是不强制）
 const MAX_STRICT = 20;
 function capStrict(tools: Tool[]): Tool[] {
@@ -407,6 +418,7 @@ export const getTools = (): Tool[] => capStrict([
   ...(wereadEnabled ? [wereadTool] : []),
   ...(deviceEnabled ? [deviceTool, shareTool] : []),
   ...(xhsEnabled ? xhsTools : []),
+  ...(musicEnabled ? musicTools : []),
   ...(douyinEnabled ? douyinTools : []),
   ...(douyinEnabled && douyinActionsOn() ? douyinWriteTools : []),
 ]);
