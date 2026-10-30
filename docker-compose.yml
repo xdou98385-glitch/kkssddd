@@ -8,5 +8,35 @@ services:
     network_mode: host
     environment:
       HOST: 127.0.0.1
+      # 写死在这里：environment 优先于 .env，防止 .env 里的 DB_PATH 把库指到容器内部
+      DB_PATH: /data/chat.db
     volumes:
       - ./data:/data
+
+  # 小红书（只读）用的浏览器容器。不默认启动：在服务器 .env 里加一行 COMPOSE_PROFILES=social 才会起。
+  # 只绑在本机 127.0.0.1，外网访问不到；登录态（cookie）只存在 ./data/xhs 里。
+  xhs:
+    profiles: ["social"]
+    image: xpzouying/xiaohongshu-mcp
+    platform: linux/amd64
+    restart: unless-stopped
+    shm_size: 1gb
+    environment:
+      COOKIES_PATH: /app/data/cookies.json
+      HOME: /app/data/home
+      XDG_CONFIG_HOME: /app/data/config
+    volumes:
+      - ./data/xhs:/app/data
+    ports:
+      - "127.0.0.1:18060:18060"
+
+  # 抖音（只读）小服务。不默认构建（免得它出问题拖累聊天网站更新）：
+  # 需要时单独运行 docker compose --profile douyin up -d --build douyin
+  # 只绑在本机 127.0.0.1:18070，cookie 不落盘，每次请求由聊天网站带过来。
+  douyin:
+    profiles: ["douyin"]
+    build: ./douyin
+    restart: unless-stopped
+    mem_limit: 700m
+    ports:
+      - "127.0.0.1:18070:18070"

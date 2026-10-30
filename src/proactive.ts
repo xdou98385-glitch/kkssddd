@@ -65,11 +65,14 @@ function describeGap(ms: number): string {
 }
 const preview = (t: string) => t.replace(/[*_`#>~]/g, "").replace(/\s+/g, " ").trim().slice(0, 100);
 
+const ACTIVITY_WINDOW_MIN = 180; // 心跳时附带的手机动态覆盖多久
+
 function instruction(s: ProactiveSettings, now: number, lastAt: number | null, force: boolean): string {
   return [
     "[系统消息，不是小月说的，别回应这条消息本身]",
     `现在是 ${describeNow(s.tz, now)}（${s.tz}）。${lastAt ? `距离你们上次说话过了 ${describeGap(now - lastAt)}。` : "你们还没聊过。"}`,
-    deviceEnabled ? activitySummary(180, s.tz, now) : "",
+    deviceEnabled ? activitySummary(ACTIVITY_WINDOW_MIN, s.tz, now) : "",
+    deviceEnabled ? `- 上面的手机动态只覆盖最近 ${ACTIVITY_WINDOW_MIN} 分钟。提到她用手机的情况，只能说上面写了的，次数照抄，没写的数字别报，也别说「一上午」「一整天」这种超出这段范围的话；想知道更早的情况就先用 device_activity 工具查。` : "",
     "你可以主动给小月发一条消息，也可以什么都不发。",
     "- 只有真有话想说才发：接着之前聊的事、问问她在读的书或在做的事、关心一下（睡眠、吃饭）、分享刚想到的东西。别为了发而发。",
     "- 一条，短，像朋友随手发的。不要自我介绍，不要说「我是来主动联系你的」，不要问候套话，不要说教。",
@@ -120,12 +123,16 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
       signal: AbortSignal.timeout(120_000),
       onText: () => {},
       onTool: () => {},
+      effort: "medium", // 只是决定要不要发一句话，不用想太深；聊天仍用模型默认的 high
+      tag: "proactive",
     });
 
     // 只取最后一轮的文字：调用工具之前说的话不算
     const text = result.finalText.trim();
     if (!text || /^\[skip\]/i.test(text) || result.stopReason === "refusal") return skip("Claude 觉得现在不用发");
-    db.addMessage(conv.id, "assistant", stripToolMarks(text), [], "proactive", result.toolsUsed);
+    // 心跳指令里附带了手机动态（由代码取的真实数据），记成用过 device_activity，否则之后会被当成"没查就说"
+    const sources = deviceEnabled && !result.toolsUsed.includes("device_activity") ? [...result.toolsUsed, "device_activity"] : result.toolsUsed;
+    db.addMessage(conv.id, "assistant", stripToolMarks(text), [], "proactive", sources);
     const push = await sendPush({ title: "Claude", body: preview(text), url: "/" });
     return { status: "sent", text, pushed: push.sent, pushErrors: push.errors };
   } catch (err) {

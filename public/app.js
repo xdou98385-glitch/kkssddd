@@ -6,7 +6,7 @@ const els = {
 };
 
 const MAX_IMAGES = 4;
-const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null };
+const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null, tts: false, call: false };
 
 async function api(path, opts = {}) {
   const res = await fetch("/api" + path, {
@@ -66,6 +66,43 @@ function toolNote(label) {
   return n;
 }
 
+// 历史里只存了工具名，没存当次的参数，所以刷新后用通用小字
+const TOOL_LABELS = {
+  search_memories: "翻了记忆",
+  save_memory: "记了一笔",
+  sudoku_view: "看了眼棋盘",
+  sudoku_hint: "想了个提示",
+  sudoku_place: "落了子",
+  weread: "查了微信读书",
+  device_activity: "看了眼她手机最近在干嘛",
+  get_time: "看了眼时间",
+  dy_feed: "刷了眼抖音推荐",
+  dy_search: "搜了抖音",
+  dy_work: "点开了一条抖音",
+  dy_likes: "翻了翻她点赞过的抖音",
+  dy_comments: "翻了翻抖音评论区",
+  dy_people: "看了她抖音的关注/粉丝",
+  dy_collects: "翻了翻她的抖音收藏夹",
+  dy_notices: "看了她的抖音通知",
+  dy_dm_listen: "听了听抖音私信",
+  calendar_upcoming: "看了眼她的日程",
+  mail_list: "翻了翻她的邮箱",
+  mail_read: "读了一封邮件",
+  weather: "查了天气",
+  where_am_i: "看了眼她大概在哪",
+  music_now: "看了眼她在听什么",
+  music_recent: "翻了翻她最近听的歌",
+  music_top: "看了她常听的歌",
+  dy_like: "给一条抖音点了赞",
+  dy_collect: "收藏了一条抖音",
+  dy_dm_draft: "起草了一条抖音私信，等她确认",
+  dy_comment_draft: "起草了一条抖音评论，等她确认",
+  xhs_search: "搜了小红书",
+  xhs_feed: "刷了眼小红书推荐",
+  xhs_note: "点开了一条小红书笔记",
+  xhs_me: "看了眼她的小红书主页",
+};
+
 function dayDivider(key) {
   const d = document.createElement("div");
   d.className = "day";
@@ -94,7 +131,11 @@ function renderBatch(msgs) {
   for (const m of msgs) {
     const k = dayKey(m.created_at);
     if (k !== day) { nodes.push(dayDivider(k)); day = k; }
-    nodes.push(bubble(m.role, m.content, m.images, m.created_at).wrap);
+    if (m.role === "assistant") for (const t of m.tools || []) nodes.push(toolNote(TOOL_LABELS[t] || t));
+    const b = bubble(m.role, m.content, m.images, m.created_at);
+    if (m.kind) b.wrap.dataset.kind = m.kind;
+    if (m.role === "assistant") { b.wrap.dataset.id = m.id; addSpeak(b.wrap); }
+    nodes.push(b.wrap);
   }
   return { nodes, lastDay: day };
 }
@@ -116,6 +157,11 @@ async function loadThread() {
     els.messages.querySelector("button").onclick = loadThread;
     return;
   }
+  state.tts = Boolean(data.tts);
+  $("tab-radio").hidden = !state.tts;
+  $("tab-call").hidden = !data.call;
+  state.call = Boolean(data.call);
+  if (location.hash === "#radio") setPage("radio");
   els.model.value = data.conversation.model;
   state.hasMore = data.hasMore;
   if (!data.messages.length) return showEmpty();
@@ -125,6 +171,7 @@ async function loadThread() {
   state.lastId = data.messages.at(-1).id;
   state.lastDay = lastDay;
   scrollDown(true);
+  if (!state.busy) markRegen();
 }
 
 async function loadEarlier() {
@@ -231,6 +278,14 @@ async function send(text, images) {
   const mine = bubble("user", text, images, sentAt);
   mine.wrap.classList.add("enter");
   els.messages.append(mine.wrap);
+  await runReply("/api/thread/chat", { content: text, images, tz: timeZone() });
+}
+
+// 流式接收一条回复（发送和重新生成共用）
+async function runReply(url, payload) {
+  clearRegen();
+  els.messages.querySelector(".empty")?.remove();
+  if (game.open) $("game-say").textContent = "";
   const reply = bubble("assistant", "");
   reply.wrap.classList.add("enter");
   reply.b.classList.add("cursor");
@@ -240,12 +295,13 @@ async function send(text, images) {
   setBusy(true);
   let acc = "";
   let failed = "";
+  let doneId = null;
   state.abort = new AbortController();
   try {
-    const res = await fetch("/api/thread/chat", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: text, images }),
+      body: JSON.stringify(payload),
       signal: state.abort.signal,
     });
     if (res.status === 401) { location.href = "/login"; return; }
@@ -254,20 +310,24 @@ async function send(text, images) {
       if (event === "text") {
         acc += data;
         reply.b.innerHTML = renderMarkdown(acc);
+        if (game.open) $("game-say").innerHTML = renderMarkdown(acc);
         scrollDown();
       } else if (event === "tool") {
         reply.wrap.before(toolNote(data));
         scrollDown();
       } else if (event === "game") {
         if (game.open) gameLoad();
-      } else if (event === "error") failed = data;
+      } else if (event === "done") doneId = data?.id ?? null;
+      else if (event === "error") failed = data;
     });
   } catch (err) {
     if (err.name !== "AbortError") failed = err.message;
   } finally {
     reply.b.classList.remove("cursor");
-    if (acc) setTime(reply.wrap, Date.now());
-    else reply.wrap.remove();
+    if (acc) {
+      setTime(reply.wrap, Date.now());
+      if (doneId) { reply.wrap.dataset.id = doneId; addSpeak(reply.wrap); }
+    } else reply.wrap.remove();
     if (failed) {
       const e = bubble("assistant", "");
       e.b.classList.add("err");
@@ -276,9 +336,121 @@ async function send(text, images) {
       scrollDown();
     }
     setBusy(false);
+    loadPending();
     if (game.open) gameLoad();
     // 这是第一条消息：重新加载一次，拿到数据库里的 id 才能往前翻页
     if (!failed) await syncIds();
+    markRegen();
+  }
+  return failed;
+}
+
+// ---- 朗读 ----
+const SPEAK_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
+const STOP_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+let speaking = null; // { btn, audio }
+
+function toast(msg) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.textContent = msg;
+  document.body.append(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function stopSpeaking() {
+  if (!speaking) return;
+  const { btn, audio } = speaking;
+  speaking = null;
+  audio.pause();
+  audio.removeAttribute("src");
+  audio.load();
+  btn.classList.remove("on", "loading");
+  btn.innerHTML = SPEAK_ICON;
+  deckSet("—", 0, 0);
+}
+
+// 点一下播放，再点停止。必须在点击里同步 play()，iPhone 才不会拦；音频由浏览器自己请求
+function toggleSpeak(btn, id, meta) {
+  const was = speaking?.btn === btn;
+  stopSpeaking();
+  if (was) return;
+  const url = meta?.url ?? "/api/tts/" + id;
+  const audio = new Audio(url);
+  speaking = { btn, audio };
+  btn.classList.add("on", "loading");
+  const title = meta?.title ?? "";
+  audio.addEventListener("playing", () => { btn.classList.remove("loading"); btn.innerHTML = STOP_ICON; deckSet(title, audio.currentTime, audio.duration); });
+  audio.addEventListener("timeupdate", () => { if (speaking?.audio === audio) deckSet(title, audio.currentTime, audio.duration); });
+  audio.addEventListener("ended", () => { if (speaking?.audio === audio) stopSpeaking(); });
+  audio.addEventListener("error", async () => {
+    if (speaking?.audio !== audio) return;
+    stopSpeaking();
+    const r = await fetch(url).catch(() => null);
+    toast((await r?.json().catch(() => null))?.error || "语音播放失败");
+  });
+  audio.play().catch((e) => {
+    if (speaking?.audio !== audio) return;
+    stopSpeaking();
+    if (e?.name === "NotAllowedError") toast("点一下就能听");
+  });
+}
+
+function addSpeak(wrap) {
+  if (!state.tts || !wrap.dataset.id || wrap.querySelector(".speak")) return;
+  const time = wrap.querySelector(".time");
+  if (!time) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "speak";
+  btn.title = btn.ariaLabel = "朗读";
+  btn.innerHTML = SPEAK_ICON;
+  btn.onclick = () => toggleSpeak(btn, wrap.dataset.id, { title: "对话 · " + firstLine(wrap.querySelector(".bubble")?.textContent ?? "") });
+  time.append(btn);
+}
+
+// ---- 重新生成最后一条回复 ----
+function clearRegen() {
+  els.messages.querySelectorAll(".regen").forEach((b) => b.remove());
+}
+
+// 只有最后一条是「正常的助手回复」时才给按钮；主动消息、报错气泡都不给
+function markRegen() {
+  clearRegen();
+  const last = els.messages.lastElementChild;
+  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || ["proactive", "podcast", "call"].includes(last.dataset.kind)) return;
+  if (last.querySelector(".bubble.err")) return;
+  let prev = last.previousElementSibling;
+  while (prev?.classList.contains("tool")) prev = prev.previousElementSibling;
+  if (!prev?.classList.contains("user")) return;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "regen";
+  btn.title = btn.ariaLabel = "重新生成";
+  btn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+  btn.onclick = regenerate;
+  (last.querySelector(".time") ?? last).append(btn);
+}
+
+async function regenerate() {
+  if (state.busy) return;
+  const last = els.messages.lastElementChild;
+  if (!last?.classList.contains("msg")) return;
+  // 连同它上面的工具小字一起去掉
+  while (last.previousElementSibling?.classList.contains("tool")) last.previousElementSibling.remove();
+  last.remove();
+  const failed = await runReply("/api/thread/regenerate", {});
+  if (failed) {
+    // 失败了：服务器已把原来那条放回去，重新加载出来，再把报错放在下面
+    await refreshThread(true);
+    const e = bubble("assistant", "");
+    e.b.classList.add("err");
+    e.b.textContent = failed;
+    els.messages.append(e.wrap);
+    scrollDown();
   }
 }
 
@@ -339,9 +511,12 @@ els.input.addEventListener("input", autosize);
 
 // ---- 设置 ----
 $("settings-btn").onclick = async () => {
-  els.systemPrompt.value = (await api("/settings")).system_prompt;
+  const st = await api("/settings");
+  els.systemPrompt.value = st.system_prompt;
+  $("window-preset").value = st.window_preset;
   showMemoryStatus("检查记忆连接…", false);
   loadProactiveUI();
+  loadConnections();
   els.settings.showModal();
   try {
     const s = await api("/memory/status");
@@ -361,13 +536,14 @@ $("settings-btn").onclick = async () => {
   }
 };
 function showMemoryStatus(text, bad, id = "memory-status") {
+  if (!$(id)) return; // 这几行已经并进「连接」区了
   const el = $(id);
   el.textContent = text;
   el.classList.toggle("bad", bad);
 }
 els.settings.addEventListener("close", async () => {
   if (els.settings.returnValue === "save") {
-    await api("/settings", { method: "PUT", body: { system_prompt: els.systemPrompt.value } });
+    await api("/settings", { method: "PUT", body: { system_prompt: els.systemPrompt.value, window_preset: $("window-preset").value } });
     await api("/thread", { method: "PATCH", body: { model: els.model.value } });
     localStorage.setItem("model", els.model.value);
     try {
@@ -386,6 +562,7 @@ els.settings.addEventListener("close", async () => {
 const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 function setStatus(id, text, bad = false) {
+  if (!$(id)) return;
   const el = $(id);
   el.textContent = text;
   el.classList.toggle("bad", bad);
@@ -491,6 +668,263 @@ $("pro-run").onclick = async () => {
   btn.disabled = false;
 };
 
+// ---- 设置：连接（API key、地址）----
+const connMsg = {}; // 每组最近一次保存/测试的结果，重新渲染后还要显示
+async function loadConnections() {
+  const box = $("conn-list");
+  let groups;
+  try { groups = (await api("/connections")).groups; } catch { box.textContent = "读取失败"; return; }
+  box.replaceChildren(...groups.map(connGroup));
+}
+
+function connGroup(g) {
+  const wrap = document.createElement("div");
+  wrap.className = "conn";
+  const title = document.createElement("div");
+  title.className = "conn-title";
+  title.textContent = g.title;
+  const hint = document.createElement("small");
+  hint.textContent = g.hint;
+  wrap.append(title, hint);
+
+  const inputs = {};
+  for (const f of g.fields) {
+    const row = document.createElement("label");
+    row.className = "conn-row";
+    const name = document.createElement("span");
+    name.textContent = f.label;
+    const input = document.createElement("input");
+    input.type = f.secret ? "password" : "text";
+    input.autocomplete = "off";
+    input.autocapitalize = "off";
+    input.spellcheck = false;
+    if (f.secret) input.placeholder = f.set ? `已设置（${f.source === "env" ? "来自 .env" : "来自这里"}），留空不改` : "还没设置";
+    else { input.value = f.value || ""; input.placeholder = f.placeholder || ""; }
+    inputs[f.name] = { input, f };
+    row.append(name, input);
+    wrap.append(row);
+    if (f.generate) {
+      const gen = document.createElement("button");
+      gen.type = "button";
+      gen.textContent = "随机生成";
+      gen.onclick = () => { input.type = "text"; input.value = [...crypto.getRandomValues(new Uint8Array(20))].map((b) => b.toString(16).padStart(2, "0")).join(""); };
+      wrap.append(gen);
+    }
+    if (f.reveal && f.set) {
+      const view = document.createElement("button");
+      view.type = "button";
+      view.textContent = "查看";
+      view.onclick = async () => {
+        try { const r = await api("/connections/reveal/" + f.name); input.type = "text"; input.value = r.value; } catch (err) { toast(err.message); }
+      };
+      wrap.append(view);
+    }
+  }
+  if (g.qrcode) {
+    const qr = document.createElement("button");
+    qr.type = "button";
+    qr.textContent = "登录二维码";
+    const img = document.createElement("img");
+    img.className = "conn-qr";
+    img.hidden = true;
+    const tip = document.createElement("p");
+    tip.className = "memory-status";
+    let timer = null;
+    const stop = () => { clearInterval(timer); timer = null; };
+    // 二维码要在电脑上显示，用手机里的小红书 app「扫一扫」；手机自己扫自己屏幕的话，截图再从相册扫。
+    qr.onclick = async () => {
+      if (qr.disabled) return;
+      stop();
+      qr.disabled = true;
+      img.hidden = true;
+      tip.classList.remove("bad");
+      tip.textContent = "生成中，要开浏览器，可能要十几秒到半分钟。别重复点，重复点会把前一张作废。";
+      try {
+        const r = await api("/connections/xhs/qrcode");
+        if (r.loggedIn) { tip.textContent = "已经登录了，不用扫码。"; qr.disabled = false; return; }
+        img.src = r.img;
+        img.hidden = false;
+        let left = r.expiresIn;
+        const show = () => { tip.textContent = `用小红书 app 扫一扫，约 ${left} 秒内有效。扫完后点下面的「保存并测试」，要等十几秒，只点一次。`; };
+        show();
+        timer = setInterval(() => {
+          left -= 1;
+          if (left <= 0) { stop(); img.hidden = true; tip.textContent = "二维码过期了。需要的话再点一次「登录二维码」。"; tip.classList.add("bad"); qr.disabled = false; return; }
+          show();
+        }, 1000);
+        qr.disabled = false; // 仍然可以点；点了会重新要一张（要新一张的时候才点）
+      } catch (err) {
+        tip.textContent = "没拿到二维码：" + err.message;
+        tip.classList.add("bad");
+        qr.disabled = false;
+      }
+    };
+    wrap.append(qr, img, tip);
+  }
+  const status = document.createElement("p");
+  status.className = "memory-status";
+  if (connMsg[g.id]) { status.textContent = connMsg[g.id].text; status.classList.toggle("bad", connMsg[g.id].bad); }
+  const save = document.createElement("button");
+  save.type = "button";
+  save.textContent = "保存并测试";
+  save.onclick = async () => {
+    const values = {};
+    for (const { input, f } of Object.values(inputs)) {
+      const v = input.value.trim();
+      if (f.secret ? v !== "" : v !== (f.value || "")) values[f.name] = v; // 密钥留空 = 不改；普通项改了才传
+    }
+    save.disabled = true;
+    status.className = "memory-status";
+    status.textContent = "保存中…";
+    try {
+      if (Object.keys(values).length) await api("/connections", { method: "PUT", body: { values } });
+      status.textContent = "测试中…";
+      const r = await api(`/connections/${g.id}/test`, { method: "POST" });
+      const bad = Boolean(r.enabled && !r.ok);
+      status.textContent = !r.enabled ? "还没填完整。" : r.ok ? "连接正常。" + (r.detail ? " " + r.detail : "") : "没成功：" + r.error;
+      status.classList.toggle("bad", bad);
+      connMsg[g.id] = { text: status.textContent, bad };
+      if (r.enabled && r.ok) { await loadConnections(); }
+      refreshFlags();
+    } catch (err) { status.textContent = "失败：" + err.message; status.classList.add("bad"); }
+    save.disabled = false;
+  };
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.textContent = "清除";
+  clear.title = "清掉这里填的值，退回服务器 .env 里的";
+  clear.onclick = async () => {
+    if (!confirm(`清除「${g.title}」在这里填的值？（.env 里的不受影响）`)) return;
+    await api("/connections", { method: "PUT", body: { values: Object.fromEntries(g.fields.map((f) => [f.name, null])) } });
+    delete connMsg[g.id];
+    await loadConnections();
+    refreshFlags();
+  };
+  const actions = document.createElement("div");
+  actions.className = "push-actions";
+  actions.append(save, clear);
+  if (g.probe) {
+    // 体检：把每个功能各试一遍，要花一两分钟，也会算几次操作
+    const probe = document.createElement("button");
+    probe.type = "button";
+    probe.textContent = "体检（试读一遍）";
+    probe.onclick = async () => {
+      probe.disabled = true;
+      status.classList.remove("bad");
+      status.style.whiteSpace = "pre-line";
+      status.textContent = "试读中，推荐流、搜索、点赞列表各试一次，大概要半分钟到一分钟…";
+      try {
+        const r = await api(`/connections/${g.id}/test?deep=1`, { method: "POST" });
+        status.textContent = r.detail || r.error || "没有结果";
+        status.classList.toggle("bad", !r.ok);
+        connMsg[g.id] = { text: status.textContent, bad: !r.ok };
+      } catch (err) { status.textContent = "失败：" + err.message; status.classList.add("bad"); }
+      probe.disabled = false;
+    };
+    actions.append(probe);
+  }
+  wrap.append(actions, status);
+  return wrap;
+}
+
+// 连接改了以后，语音相关的标签页要跟着出现或消失
+async function refreshFlags() {
+  const d = await api("/thread?limit=1").catch(() => null);
+  if (!d) return;
+  state.tts = Boolean(d.tts);
+  state.call = Boolean(d.call);
+  $("tab-radio").hidden = !state.tts;
+  $("tab-call").hidden = !state.call;
+}
+
+// ---- 电台页 ----
+const TICKS = 28;
+$("deck-bar").innerHTML = "<i></i>".repeat(TICKS);
+const mmss = (t) => (Number.isFinite(t) ? `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}` : "--:--");
+
+function deckSet(title, cur, total) {
+  $("deck-title").textContent = title;
+  $("deck-time").textContent = title === "—" ? "--:--" : `${mmss(cur)} / ${mmss(total)}`;
+  const lit = total > 0 ? Math.floor((cur / total) * TICKS) : 0;
+  $("deck-bar").querySelectorAll("i").forEach((el, i) => el.classList.toggle("on", i < lit));
+}
+
+const plain = (t) => t.replace(/[*_`#>~\[\]]/g, "").replace(/\s+/g, " ").trim();
+const firstLine = (t) => { const s = plain(t); const m = s.match(/^.{6,34}?[。！？.!?…]/); return m ? m[0] : s.slice(0, 30); };
+
+let epTimer = null;
+let epWant = null; // 刚点了「来一期」的那一期：做好后自动播
+const epLabel = { writing: "写稿中…", voicing: "配音中…" };
+
+async function loadEpisodes() {
+  const list = $("episodes");
+  let eps;
+  let q = null;
+  try { const d = await api("/podcasts"); eps = d.episodes; q = d.quota; } catch { return; }
+  $("pod-quota").textContent = q ? `ElevenLabs 额度：本月还剩 ${q.left.toLocaleString()} / ${q.limit.toLocaleString()}（一期约 3000 多）` : "";
+  const open = new Set([...list.querySelectorAll(".ep.open")].map((li) => li.dataset.id)); // 刷新时保持展开状态
+  list.replaceChildren(...eps.map((e, i) => episodeRow(e, eps.length - i, open.has(String(e.id)))));
+  if (!eps.length) list.innerHTML = '<li class="ep-empty">还没有。点「来一期」。</li>';
+
+  const pending = eps.some((e) => e.status === "writing" || e.status === "voicing");
+  if (pending && !epTimer) epTimer = setInterval(() => document.body.dataset.page === "radio" ? loadEpisodes() : null, 3000);
+  if (!pending && epTimer) { clearInterval(epTimer); epTimer = null; }
+  const ready = epWant && eps.find((e) => e.id === epWant && e.status === "ready");
+  if (ready) {
+    epWant = null;
+    setStatus("pod-status", "");
+    list.querySelector(`.ep[data-id="${ready.id}"] .ep-play`)?.click(); // 尽量直接播；iPhone 拦了会提示点一下
+  }
+  const failed = epWant && eps.find((e) => e.id === epWant && e.status === "failed");
+  if (failed) { epWant = null; setStatus("pod-status", "这期没做成：" + (failed.error || "未知原因"), true); }
+}
+
+function episodeRow(e, no, open) {
+  const li = document.createElement("li");
+  li.className = "ep" + (open ? " open" : "");
+  li.dataset.id = e.id;
+  const d = new Date(e.created_at);
+  const when = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const num = String(no).padStart(2, "0");
+  const ready = e.status === "ready";
+  const head = document.createElement("div");
+  head.className = "ep-head";
+  head.innerHTML = `<span class="ep-no">${num}</span><div class="ep-body"><div class="ep-title"></div><div class="ep-meta"></div></div>`;
+  head.querySelector(".ep-title").textContent = e.title || epLabel[e.status] || "没做成";
+  head.querySelector(".ep-meta").textContent = e.status === "failed" ? e.error || "" : ready ? `${when}${e.title_en ? " · " + e.title_en : ""}` : `${when} · ${epLabel[e.status] ?? ""}`;
+  li.classList.toggle("pending", !ready && e.status !== "failed");
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ep-play";
+  btn.ariaLabel = "播放";
+  btn.innerHTML = SPEAK_ICON;
+  btn.disabled = !ready;
+  btn.onclick = (ev) => { ev.stopPropagation(); toggleSpeak(btn, e.id, { url: `/api/podcast/${e.id}/audio`, title: `${num} ${e.title_en || e.title}` }); };
+  head.append(btn);
+  li.append(head);
+  if (e.zh) {
+    const text = document.createElement("div");
+    text.className = "ep-text";
+    for (const para of e.zh.split(/\n{2,}/)) { const p = document.createElement("p"); p.textContent = para.trim(); text.append(p); }
+    li.append(text);
+    head.onclick = () => li.classList.toggle("open"); // 点一下展开/收起文字
+  }
+  return li;
+}
+
+$("pod-run").onclick = async () => {
+  const btn = $("pod-run");
+  btn.disabled = true;
+  setStatus("pod-status", "开始了。写稿加配音大概要一两分钟，可以先去干别的，做好会出现在下面。");
+  try {
+    const r = await api("/podcast", { method: "POST", body: { topic: $("pod-topic").value.trim() } });
+    epWant = r.id;
+    $("pod-topic").value = "";
+    await loadEpisodes();
+  } catch (err) { setStatus("pod-status", "失败：" + err.message, true); }
+  btn.disabled = false;
+};
+
 // 回到页面时，如果有新消息（比如它主动发的）就刷新
 async function syncIds() {
   const d = await api("/thread?limit=40").catch(() => null);
@@ -502,6 +936,7 @@ async function refreshThread(force = false) {
   if (state.busy) return;
   const d = await api("/thread?limit=40").catch(() => null);
   if (!d || !d.messages.length) return;
+  state.tts = Boolean(d.tts);
   if (!force && d.messages.at(-1).id === state.lastId) return;
   const { nodes, lastDay } = renderBatch(d.messages);
   els.messages.replaceChildren(...nodes);
@@ -510,6 +945,7 @@ async function refreshThread(force = false) {
   state.hasMore = d.hasMore;
   state.lastDay = lastDay;
   scrollDown(true);
+  if (!state.busy) markRegen();
 }
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshThread();
@@ -606,13 +1042,6 @@ function askClaude(text) {
   if (!state.busy) send(text, []);
 }
 
-$("game-btn").onclick = () => {
-  game.open = !game.open;
-  $("game").hidden = !game.open;
-  $("game-btn").setAttribute("aria-pressed", String(game.open));
-  if (game.open) gameLoad();
-  else scrollDown(true);
-};
 $("g-hint").onclick = () => askClaude("给我个提示，先别直接说答案。");
 $("g-step").onclick = () => askClaude("你来走下一步，走完告诉我为什么这么下。");
 $("g-new").onclick = () => $("new-game").showModal();
@@ -645,3 +1074,226 @@ document.addEventListener("keydown", (e) => {
   await loadThread();
   if ((await api("/session")).auth) $("logout").hidden = false;
 })();
+
+// ---- 页面切换：对话 / 电台 / 棋盘 ----
+const PAGES = { chat: "Claude", radio: "电台", call: "通话", board: "棋盘" };
+function setPage(p) {
+  if (!PAGES[p] || (p === "radio" && !state.tts) || (p === "call" && !state.call)) p = "chat";
+  if (p !== "call" && call.on) hangUp();
+  document.body.dataset.page = p;
+  $("title").textContent = PAGES[p];
+  document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-current", String(b.dataset.page === p)));
+  game.open = p === "board";
+  $("game").hidden = !game.open;
+  $("radio").hidden = p !== "radio";
+  $("call").hidden = p !== "call";
+  if (game.open) gameLoad();
+  if (p === "radio") loadEpisodes();
+  if (p === "chat") scrollDown(true);
+  history.replaceState(null, "", p === "chat" ? location.pathname : "#" + p);
+}
+
+// ---- 通话 ----
+// 流程：接通（点一下，拿麦克风、解锁播放）→ 它先开口 → 听你说（检测到停顿就收尾）→ 上传识别 → 它回 → 播放 → 再听
+const SILENCE_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+const call = { on: false, state: "idle", stream: null, ctx: null, analyser: null, audio: null, rec: null, next: null, token: 0, t0: 0, timer: null, maxMs: 600000, subs: false };
+
+function callSet(state, label) {
+  call.state = state;
+  $("call-state").textContent = label;
+  $("call-moon").dataset.state = state;
+}
+function callNote(text, bad = false) { setStatus("call-note", text, bad); }
+function callSub(you, it) {
+  const el = $("call-subs");
+  el.textContent = [you && "you: " + you, it && "claude: " + it].filter(Boolean).join("\n");
+}
+
+async function callStart() {
+  if (call.on) return;
+  callNote("");
+  call.audio = new Audio(SILENCE_WAV); // 在点击里先放一段静音，iPhone 之后才允许自动播放它的回复
+  await call.audio.play().catch(() => {});
+  try {
+    call.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch {
+    callNote("没拿到麦克风。在 iPhone 设置里允许这个网页用麦克风，再试一次。", true);
+    return;
+  }
+  call.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  call.analyser = call.ctx.createAnalyser();
+  call.analyser.fftSize = 1024;
+  call.ctx.createMediaStreamSource(call.stream).connect(call.analyser);
+  call.on = true;
+  const token = ++call.token;
+  call.t0 = Date.now();
+  call.timer = setInterval(() => {
+    const ms = Date.now() - call.t0;
+    $("call-time").textContent = mmss(ms / 1000);
+    if (ms > call.maxMs) { toast("通话时间到了"); hangUp(); }
+  }, 500);
+  $("call-go").textContent = "挂断";
+  $("call-go").classList.add("live");
+  callSub("", "");
+  // 它先开口
+  await callRound(token, null);
+}
+
+function hangUp() {
+  if (!call.on) return;
+  call.on = false;
+  call.token++;
+  clearInterval(call.timer);
+  try { call.rec?.state === "recording" && call.rec.stop(); } catch { /* 已经停了 */ }
+  call.rec = null;
+  call.audio?.pause();
+  call.stream?.getTracks().forEach((t) => t.stop());
+  call.ctx?.close().catch(() => {});
+  call.stream = call.ctx = call.analyser = null;
+  $("call-go").textContent = "接通";
+  $("call-go").classList.remove("live");
+  callSet("idle", "STANDBY");
+  $("call-moon").style.removeProperty("--lvl");
+  refreshThread(true); // 通话记录会出现在对话里
+}
+
+/** 一轮：blob 为 null 表示刚接通，让它先说话 */
+async function callRound(token, blob, durationMs = 0) {
+  callSet("thinking", "THINKING");
+  let r;
+  try {
+    const res = await fetch("/api/call/turn", {
+      method: "POST",
+      headers: blob ? { "Content-Type": blob.type, "X-Duration-Ms": String(Math.round(durationMs)) } : { "X-Call-Start": "1" },
+      body: blob ?? "",
+    });
+    if (res.status === 401) { location.href = "/login"; return; }
+    r = await res.json();
+    if (!res.ok) throw new Error(r.error || res.statusText);
+  } catch (err) {
+    if (token !== call.token) return;
+    callNote(err.message, true);
+    if (/额度/.test(err.message)) return hangUp();
+    return callListen(token); // 其他错误：提示一下，接着听
+  }
+  if (token !== call.token) return;
+  if (r.maxMinutes) call.maxMs = r.maxMinutes * 60000;
+  if (!r.reply) return callListen(token); // 没听清，接着听
+  callSub(r.heard, r.reply);
+  if (r.audioError) { callNote(r.audioError, true); return callListen(token); }
+  callSet("speaking", "SPEAKING");
+  let done = false;
+  const next = (msg) => {
+    if (done || token !== call.token) return;
+    done = true;
+    if (msg) callNote(msg, true);
+    callListen(token);
+  };
+  call.next = next;
+  call.audio.onended = () => next();
+  call.audio.onerror = () => next("播放失败");
+  call.audio.src = "/api/tts/" + r.id;
+  call.audio.play().catch((e) => {
+    if (e?.name === "NotAllowedError") { callNote("点一下月亮就能听到", true); callSet("speaking", "TAP MOON"); }
+    else next("播放失败");
+  });
+}
+
+/** 听她说话：音量过了阈值算开口；开口之后静音超过一小会儿就收尾 */
+function callListen(token) {
+  if (token !== call.token || !call.on) return;
+  callSet("listening", "LISTENING");
+  const mime = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find((m) => window.MediaRecorder?.isTypeSupported(m));
+  if (!mime) { callNote("这个浏览器不能录音", true); return hangUp(); }
+  const chunks = [];
+  const rec = new MediaRecorder(call.stream, { mimeType: mime });
+  call.rec = rec;
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const buf = new Float32Array(call.analyser.fftSize);
+  const started = Date.now();
+  let base = null, baseN = 0, voiceMs = 0, silenceMs = 0, spoke = false, last = started, spokeAt = 0;
+  let discard = false;
+
+  const tick = () => {
+    if (token !== call.token || rec.state !== "recording") return;
+    call.analyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    const rms = Math.sqrt(sum / buf.length);
+    const now = Date.now(), dt = now - last;
+    last = now;
+    $("call-moon").style.setProperty("--lvl", Math.min(1, rms * 12).toFixed(2));
+    if (now - started < 500) { base = ((base ?? 0) * baseN + rms) / (baseN + 1); baseN++; }
+    else {
+      const thr = Math.max(0.015, (base ?? 0) * 2.5);
+      if (rms > thr) { voiceMs += dt; silenceMs = 0; if (voiceMs > 250 && !spoke) { spoke = true; spokeAt = now; } }
+      else if (spoke) silenceMs += dt;
+      if (spoke && silenceMs >= 1100) return rec.stop();
+      if (spoke && now - spokeAt > 25000) return rec.stop(); // 一句话最长 25 秒
+      if (!spoke && now - started > 20000) { discard = true; return rec.stop(); } // 一直没人说话，丢掉这段重新听
+    }
+    requestAnimationFrame(tick);
+  };
+  rec.onstop = () => {
+    if (token !== call.token) return;
+    if (discard || !spoke) return callListen(token);
+    const blob = new Blob(chunks, { type: mime.split(";")[0] });
+    callRound(token, blob, Date.now() - started - silenceMs);
+  };
+  rec.start();
+  requestAnimationFrame(tick);
+}
+
+$("call-go").onclick = () => (call.on ? hangUp() : callStart());
+$("call-moon").onclick = () => {
+  if (!call.on || call.state !== "speaking") return;
+  if (call.audio.paused) { callNote(""); callSet("speaking", "SPEAKING"); call.audio.play().catch(() => call.next?.("播放失败")); return; } // 被拦住的自动播放：点一下补上
+  call.audio.pause(); // 它正在说：点月亮打断它，轮到你
+  call.next?.();
+};
+$("call-sub-toggle").onclick = () => {
+  call.subs = !call.subs;
+  $("call-subs").hidden = !call.subs;
+  $("call-sub-toggle").textContent = "字幕：" + (call.subs ? "开" : "关");
+};
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && call.on) hangUp(); });
+
+// ---- 启动：标签页点击、初始页面（要放在最后，前面的东西都定义好了）----
+document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
+document.body.dataset.page = "chat";
+const startPage = location.hash.slice(1);
+if (startPage === "board") setPage("board"); // 电台要等知道语音有没有开，loadThread 之后再切
+
+
+// ---- 待确认的操作（Claude 起草的私信等）：她点了才真执行 ----
+async function loadPending() {
+  const box = $("pending");
+  if (!box) return;
+  let list = [];
+  try { list = (await api("/actions")).actions || []; } catch { return; }
+  box.replaceChildren(...list.map((a) => {
+    const card = document.createElement("div");
+    card.className = "pending-card";
+    const t = document.createElement("div");
+    t.className = "pending-text";
+    t.textContent = a.summary;
+    const ok = document.createElement("button");
+    ok.type = "button"; ok.textContent = "发送";
+    const no = document.createElement("button");
+    no.type = "button"; no.textContent = "丢掉"; no.className = "flat";
+    const msg = document.createElement("div");
+    msg.className = "pending-msg";
+    ok.onclick = async () => {
+      ok.disabled = no.disabled = true; msg.textContent = "发送中…";
+      try { await api(`/actions/${a.id}/confirm`, { method: "POST" }); card.remove(); }
+      catch (err) { msg.textContent = "没发出去：" + err.message; ok.disabled = no.disabled = false; }
+    };
+    no.onclick = async () => { await api(`/actions/${a.id}/discard`, { method: "POST" }).catch(() => {}); card.remove(); };
+    const row = document.createElement("div");
+    row.className = "pending-row";
+    row.append(no, ok);
+    card.append(t, msg, row);
+    return card;
+  }));
+}
+loadPending();

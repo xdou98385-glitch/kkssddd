@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { findTool, tools } from "./tools.ts";
+import { findTool, getTools } from "./tools.ts";
 
 // key 从环境变量 ANTHROPIC_API_KEY 读取，不要写进代码
 const client = new Anthropic();
@@ -15,6 +15,8 @@ export interface ModelOption {
 export const MODELS: ModelOption[] = [
   // effort 低了它会少调工具、凭印象回答；陪伴场景里"真的去查"比省 token 重要，所以日常模型用 high
   { id: "claude-sonnet-5-5", label: "Sonnet 5.5（日常）", effort: "high", fallback: true },
+  // 4.6 不在服务器端 fallback 的支持名单里；没传 thinking 参数时它不思考，单价比 5.5 高 50%
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6（旧语气）", effort: "high", fallback: false },
   { id: "claude-opus-5-5", label: "Opus 5.5（难题）", effort: "medium", fallback: true },
   { id: "claude-haiku-4-5", label: "Haiku 4.5（便宜快）", fallback: false },
 ];
@@ -34,6 +36,8 @@ export async function streamChat(opts: {
   signal: AbortSignal;
   onText: (delta: string) => void;
   onTool: (label: string, name: string) => void;
+  effort?: "low" | "medium" | "high"; // 覆盖模型默认的 effort（模型本身不支持 effort 时无效）
+  tag?: string; // 日志里标注这次调用是干嘛的（chat / proactive）
 }): Promise<{ text: string; finalText: string; stopReason: string | null; toolsUsed: string[] }> {
   const { model } = opts;
   const messages: Anthropic.Beta.BetaMessageParam[] = [...opts.messages];
@@ -41,8 +45,12 @@ export async function streamChat(opts: {
   let text = ""; // 整条回复，含调用工具前说的话
   let finalText = ""; // 只有最后一轮（真正的回复）
   let stopReason: string | null = null;
+  const used = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }; // 本次所有轮次的 token 合计
+  const logUsage = () =>
+    console.log(`usage: ${opts.tag ?? "chat"} ${model.id} in=${used.input} cache_read=${used.cacheRead} cache_write=${used.cacheWrite} out=${used.output}`);
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
+    const toolList = getTools();
     const stream = client.beta.messages.stream(
       {
         model: model.id,
@@ -50,8 +58,8 @@ export async function streamChat(opts: {
         // 自动缓存最后一个可缓存块：长对话每轮只需为新增内容付全价
         cache_control: { type: "ephemeral" },
         ...(opts.system ? { system: opts.system } : {}),
-        ...(model.effort ? { output_config: { effort: model.effort } } : {}),
-        ...(tools.length ? { tools: tools.map((t) => t.def) } : {}),
+        ...(model.effort ? { output_config: { effort: opts.effort ?? model.effort } } : {}),
+        ...(toolList.length ? { tools: toolList.map((t) => t.def) } : {}),
         // 被安全分类器拒绝时，服务器自动换模型重跑
         ...(model.fallback
           ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }
@@ -80,9 +88,13 @@ export async function streamChat(opts: {
       final = await stream.finalMessage();
     } catch (err) {
       // 用户中途停止：保留已生成的部分
-      if (opts.signal.aborted) return { text, finalText, stopReason: "aborted", toolsUsed };
+      if (opts.signal.aborted) { logUsage(); return { text, finalText, stopReason: "aborted", toolsUsed }; }
       throw err;
     }
+    used.input += final.usage.input_tokens;
+    used.output += final.usage.output_tokens;
+    used.cacheRead += final.usage.cache_read_input_tokens ?? 0;
+    used.cacheWrite += final.usage.cache_creation_input_tokens ?? 0;
     stopReason = final.stop_reason;
     if (stopReason !== "tool_use") break;
 
@@ -110,6 +122,7 @@ export async function streamChat(opts: {
     }
     messages.push({ role: "user", content: results });
   }
+  logUsage();
   return { text, finalText, stopReason, toolsUsed };
 }
 
@@ -122,7 +135,10 @@ export async function summarize(previous: string, transcript: string): Promise<s
     max_tokens: 2000,
     system:
       "你负责给一段长期对话维护「滚动摘要」。把旧摘要和新增对话合并成一份更新后的摘要，用中文，不超过 800 字。" +
-      "保留：发生过的事实、约定和承诺、她的近况和情绪、还没聊完的话题、两人之间的称呼和梗。" +
+      "这份摘要是之后唯一能看到旧对话的地方，要让接手的人不觉得断档。按重要程度保留：" +
+      "1) 她的称呼偏好、两人之间的约定、承诺、昵称和梗；2) 她的近况、情绪、正在经历的事；" +
+      "3) 还没聊完的话题、待办、她提过的计划；4) 重要的具体事实（人名、日期、数字、作品名）；" +
+      "5) 聊天的语气和相处方式。已经过时或解决的小事可以删掉，旧摘要里仍然重要的内容不要丢。" +
       "不要评论，不要写成对话，只输出摘要正文。",
     messages: [
       {
@@ -130,6 +146,22 @@ export async function summarize(previous: string, transcript: string): Promise<s
         content: `旧摘要：\n${previous || "（无）"}\n\n新增对话：\n${transcript}`,
       },
     ],
+  });
+  return res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
+}
+
+/** 把一条回复翻成适合念出来的口语（语音用）。用日常模型的低 effort，语气比 Haiku 稳 */
+export async function translateForSpeech(text: string, language: string, callMe: string): Promise<string> {
+  const res = await client.messages.create({
+    model: DEFAULT_MODEL,
+    max_tokens: 4000,
+    output_config: { effort: "low" },
+    system:
+      `你把一段中文翻成自然的口语 ${language}，用来做语音朗读。这段话是一个陪伴型 AI 对恋人般亲近的人说的，随意、松弛、带点毒舌，翻译要保留这个语气和人称。` +
+      "忠实原意，不增不减，不加解释和引号，只输出译文。" +
+      `原文里称呼她的地方（小月、新月、小k、Kay、月 等）平时统一译成 "${callMe}"；只有整段话语气正经、严肃的时候才改叫 "Kaylia"。原文没称呼她就不要凭空加名字。其他中文人名用拼音。数字和时间写成适合念出来的样子。` +
+      "要念得慢一点、懒一点、随意，像半躺着跟她说话，但声音是松的、暖的，不要刻意压低嗓子，也不要一个调子到底：句子长短错落，多用逗号、破折号和省略号安排停顿，偶尔来一句很短的，用口语缩写（gonna、kinda、'cause），别写成书面语。",
+    messages: [{ role: "user", content: text }],
   });
   return res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
 }
