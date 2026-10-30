@@ -29,7 +29,7 @@ async function cityWhere(): Promise<Where> {
   const d = await getJson(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=zh`);
   const r = d.results?.[0];
   if (!r) throw new WeatherError(`找不到城市「${city}」，换个写法试试（比如 大阪 / Osaka）`);
-  const w: Where = { lat: r.latitude, lon: r.longitude, name: [r.name, r.admin1].filter((x, i, a) => x && a.indexOf(x) === i).join("，"), source: "city" };
+  const w: Where = { lat: r.latitude, lon: r.longitude, name: [r.name, r.admin1, r.country].filter((x, i, a) => x && a.indexOf(x) === i).join("，"), source: "city" };
   cityCache.set(city, w);
   return w;
 }
