@@ -30,6 +30,16 @@ const ago = (uts?: string) => {
   return Number.isFinite(m) ? (m < 1 ? "刚刚" : m < 60 ? `${m} 分钟前` : m < 1440 ? `${Math.round(m / 60)} 小时前` : `${Math.round(m / 1440)} 天前`) : "";
 };
 
+/** 最近几首（陪听模式用）。第一首如果带 nowplaying 标记，就是正在放的 */
+export async function recentTracks(limit: number): Promise<{ key: string; label: string; nowPlaying: boolean }[]> {
+  const d = await lastfm("user.getrecenttracks", { limit: String(limit) });
+  return ([] as Track[]).concat(d.recenttracks?.track ?? []).map((t) => ({
+    key: `${t.artist?.["#text"] ?? t.artist?.name ?? ""}|${t.name ?? ""}`,
+    label: line(t),
+    nowPlaying: t["@attr"]?.nowplaying === "true",
+  }));
+}
+
 export async function musicNow(): Promise<string> {
   const d = await lastfm("user.getrecenttracks", { limit: "1" });
   const t: Track | undefined = [].concat(d.recenttracks?.track ?? [])[0];

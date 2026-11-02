@@ -186,7 +186,7 @@ export function addMessage(
   role: Message["role"],
   content: string,
   images: string[] = [],
-  kind: "proactive" | "podcast" | "call" | null = null,
+  kind: "proactive" | "podcast" | "call" | "listen" | null = null,
   tools: string[] = [],
 ): number {
   const r = db.prepare(

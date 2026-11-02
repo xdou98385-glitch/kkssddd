@@ -142,6 +142,15 @@
             <p id="push-status" class="memory-status"></p>
           </fieldset>
         </div>
+        <div class="set-panel" data-panel="notify" data-sub="listen">
+          <fieldset class="group">
+            <label class="switch"><input type="checkbox" id="listen-on"><span>陪听：我放歌时它会随口接一句</span></label>
+            <label class="field"><span>每小时最多</span>
+              <select id="listen-max"><option value="2">2 句</option><option value="4" selected>4 句</option><option value="6">6 句</option><option value="10">10 句</option></select>
+            </label>
+            <small class="memory-status">要先在「连接」里配好听歌（Last.fm）。每句都会花一次额度，换歌后要放半分钟才会考虑，安静时段沿用上面的设置，你刚说完话它不会抢着说。它听不到音频，只知道歌名。</small>
+          </fieldset>
+        </div>
         <div class="set-panel" data-panel="more">
           <div class="danger-zone">
             <button id="reset" type="button">清空聊天重新开始</button>

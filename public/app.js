@@ -425,7 +425,7 @@ function clearRegen() {
 function markRegen() {
   clearRegen();
   const last = els.messages.lastElementChild;
-  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || ["proactive", "podcast", "call"].includes(last.dataset.kind)) return;
+  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || ["proactive", "podcast", "call", "listen"].includes(last.dataset.kind)) return;
   if (last.querySelector(".bubble.err")) return;
   let prev = last.previousElementSibling;
   while (prev?.classList.contains("tool")) prev = prev.previousElementSibling;
@@ -531,6 +531,7 @@ $("settings-btn").onclick = async () => {
   $("window-preset").value = st.window_preset;
   showMemoryStatus("检查记忆连接…", false);
   loadProactiveUI();
+  loadListenUI();
   loadConnections();
   els.settings.showModal();
   try {
@@ -562,6 +563,12 @@ els.settings.addEventListener("close", async () => {
     await api("/thread", { method: "PATCH", body: { model: els.model.value } });
     localStorage.setItem("model", els.model.value);
     try {
+      await api("/listen", { method: "PUT", body: { enabled: $("listen-on").checked, maxPerHour: Number($("listen-max").value) } });
+      listenOn = $("listen-on").checked;
+    } catch (err) {
+      alert("陪听设置没保存上：" + err.message);
+    }
+    try {
       await api("/proactive", {
         method: "PUT",
         body: { enabled: $("pro-on").checked, quietStart: $("pro-qs").value, quietEnd: $("pro-qe").value, maxPerDay: Number($("pro-max").value), tz: timeZone() },
@@ -572,6 +579,20 @@ els.settings.addEventListener("close", async () => {
   }
   els.settings.returnValue = "";
 });
+
+// ---- 陪听 ----
+let listenOn = false;
+async function loadListenUI() {
+  try {
+    const s = await api("/listen");
+    $("listen-on").checked = s.enabled;
+    $("listen-max").value = String(s.maxPerHour);
+    listenOn = s.enabled;
+  } catch { /* 读不到就保持关 */ }
+}
+loadListenUI();
+// 陪听开着、页面也开着时，隔一会儿看看有没有它插的话
+setInterval(() => { if (listenOn && document.visibilityState === "visible") refreshThread(); }, 20_000);
 
 // ---- 通知与主动消息 ----
 const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;

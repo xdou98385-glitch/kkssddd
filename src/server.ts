@@ -15,6 +15,7 @@ import { memosStatus } from "./memos.ts";
 import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
+import { getListen, startListenScheduler, updateListen } from "./listen.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { startPodcast } from "./podcast.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
@@ -102,6 +103,12 @@ app.post("/api/push/unsubscribe", async (c) => {
 app.post("/api/push/test", async (c) => c.json(await sendPush({ title: "Claude", body: "通知已经通了。", url: "/" })));
 
 app.get("/api/proactive", (c) => c.json({ ...getProactive(), subscriptions: db.listPushSubs().length }));
+
+app.get("/api/listen", (c) => c.json(getListen()));
+app.put("/api/listen", async (c) => {
+  const r = updateListen(await c.req.json());
+  return typeof r === "string" ? c.json({ error: r }, 400) : c.json(r);
+});
 
 app.put("/api/proactive", async (c) => {
   const r = updateProactive(await c.req.json());
@@ -421,6 +428,7 @@ const port = Number(process.env.PORT ?? 3000);
 const server = serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.0.0.0" }, async () => {
   console.log(`listening on http://localhost:${port}`);
   startScheduler();
+  startListenScheduler();
   console.log(`device events: ${deviceEnabled ? "ON" : "OFF (DEVICE_TOKEN not set)"}`);
   console.log(`tts: ${ttsEnabled ? "ON (ElevenLabs)" : "OFF (ELEVENLABS_API_KEY / ELEVENLABS_VOICE_ID not set)"}`);
   const s = await memosStatus();
