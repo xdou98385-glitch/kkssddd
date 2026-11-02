@@ -23,7 +23,7 @@ src/memos.ts      Memos 记忆（/api/v1/memos，Bearer token，标签 #claude �
 src/weread.ts     微信读书网关（只读，参数平铺，skill_version 1.0.4，401/upgrade_info 照实报告）
 src/sudoku.ts     数独出题（唯一解）、提示（唯一候选数/唯一位置）
 src/push.ts       Web Push（VAPID 自动生成存库，sub 默认用站点 https 地址）
-src/proactive.ts  主动消息心跳（安静时段/每日上限/未回复不再发/刚聊过不发/间隔 3 小时）
+src/proactive.ts  主动消息心跳。规则：安静时段、刚聊过 45 分钟内不发、每天上限（0=不限）、她没回时间隔拉长（0 条没回≥1h，1 条≥4h，2 条≥12h，3 条≥24h，连着 4 条没回就停到她先说话；trailingProactive 统计）。节拍：Claude 在回复末尾写 [next: 45m]/[next: 3h]（parseNext 取出并去掉，夹在 30 分钟~8 小时，下限 PROACTIVE_MIN_WAKE_MIN），没写用 PROACTIVE_EVERY_MIN(90)；被规则挡住没调 Claude 的每 15 分钟再看一次（不花额度）；下次醒来时间存 settings.proactive_next，每 60 秒检查
 src/tts.ts        文字转语音（ElevenLabs）：按文本缓存到 data/tts/，每月字符上限，GET /api/tts/:消息id（支持 Range，iPhone 才肯播）
 src/podcast.ts    电台节目：设置外的「电台」页点「来一期」→ 后台让 Claude 一次写出 <title>/<title_en>/<zh>/<en>（中文稿 600–900 字 + 同内容的英语口语稿），存 episodes 表（不进聊天记录），英语稿按段落分块、带前后文（previous_text/next_text）用 podcastVoice 配音再拼起来；status: writing→voicing→ready/failed，前端轮询 GET /api/podcasts，音频走 GET /api/podcast/:id/audio（Range）
 src/xhs.ts        小红书（只读）：调旁边的 xpzouying/xiaohongshu-mcp 容器（docker-compose 里 xhs 服务，profile=social，只绑 127.0.0.1:18060，登录态在 ./data/xhs），工具 xhs_search/xhs_feed/xhs_note/xhs_me；请求排队、间隔 XHS_GAP_SECONDS(4)、每天 XHS_DAILY_CALLS(80) 次上限。她扫码登录（设置页「小红书」→登录二维码），应用不碰 cookie。写操作（点赞/评论/发帖）故意没接。**她服务器上其实已有一个原生的 systemd 服务 xhs-mcp（/root/xiaohongshu-mcp-linux-amd64，监听 18060，没口令，靠 ufw 只放行 22 挡外网），所以不用 docker-compose 里的 xhs 服务（那是 profile=social 的备用，她没启用）；设置里地址填 http://127.0.0.1:18060。** 登录二维码：容器那边每要一次就开新浏览器并作废上一张，所以 xhsQrcode 单飞+200 秒内复用，前端只在过期后才重新要，并每 6 秒自动查是否扫成功。没法在沙箱里连真小红书，只用仿造容器测过。抖音还没做（没有成熟的现成方案，签名反爬更重）。

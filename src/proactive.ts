@@ -9,7 +9,7 @@ export interface ProactiveSettings {
   enabled: boolean;
   quietStart: string; // 安静时段开始，HH:MM
   quietEnd: string; // 安静时段结束
-  maxPerDay: number; // 每天最多主动发几条
+  maxPerDay: number; // 每天最多主动发几条，0 = 不限
   tz: string; // 她所在的时区（由浏览器上报）
 }
 
@@ -33,7 +33,7 @@ export function updateProactive(patch: Partial<ProactiveSettings>): ProactiveSet
   if (patch.quietEnd !== undefined) { if (!HHMM.test(patch.quietEnd)) return "安静时段结束时间格式不对"; s.quietEnd = patch.quietEnd; }
   if (patch.maxPerDay !== undefined) {
     const n = Number(patch.maxPerDay);
-    if (!Number.isInteger(n) || n < 1 || n > 10) return "每天条数要在 1 到 10 之间";
+    if (!Number.isInteger(n) || n < 0 || n > 10) return "每天条数要在 1 到 10 之间，0 表示不限";
     s.maxPerDay = n;
   }
   if (patch.tz !== undefined) { if (!validTz(patch.tz)) return "时区不对"; s.tz = patch.tz; }
@@ -65,9 +65,28 @@ function describeGap(ms: number): string {
 }
 const preview = (t: string) => t.replace(/[*_`#>~]/g, "").replace(/\s+/g, " ").trim().slice(0, 100);
 
+const MIN_WAKE_MIN = Math.max(10, Number(process.env.PROACTIVE_MIN_WAKE_MIN ?? 30) || 30); // Claude 自己定下次醒来时间的下限
+const MAX_WAKE_MIN = 8 * 60;
+const RETRY_MIN = 15; // 被规则挡住（安静时段等，没调 Claude）时，隔多久再看一次
+
+/** 取出回复末尾的 [next: 45m] / [next: 3h]，返回去掉标记后的文字和分钟数（没写或写错返回 null） */
+export function parseNext(raw: string): { text: string; minutes: number | null } {
+  const m = raw.match(/\[next:\s*(\d+(?:\.\d+)?)\s*(m|min|h|hr)?\s*\]/i);
+  const text = raw.replace(/\[next:[^\]]*\]/gi, "").trim();
+  if (!m) return { text, minutes: null };
+  const v = Number(m[1]) * (/^h/i.test(m[2] ?? "") ? 60 : 1);
+  return { text, minutes: Math.max(MIN_WAKE_MIN, Math.min(MAX_WAKE_MIN, Math.round(v))) };
+}
+
+/** 没回时，下一条主动消息至少要隔多久：越没回隔得越久；连着 4 条都没回就停下，等她先说话 */
+export function requiredGapMs(unanswered: number): number | null {
+  const h = [1, 4, 12, 24][unanswered];
+  return h === undefined ? null : h * 3600_000;
+}
+
 const ACTIVITY_WINDOW_MIN = 180; // 心跳时附带的手机动态覆盖多久
 
-function instruction(s: ProactiveSettings, now: number, lastAt: number | null, force: boolean): string {
+function instruction(s: ProactiveSettings, now: number, lastAt: number | null, force: boolean, unanswered = 0): string {
   return [
     "[系统消息，不是小月说的，别回应这条消息本身]",
     `现在是 ${describeNow(s.tz, now)}（${s.tz}）。${lastAt ? `距离你们上次说话过了 ${describeGap(now - lastAt)}。` : "你们还没聊过。"}`,
@@ -79,7 +98,9 @@ function instruction(s: ProactiveSettings, now: number, lastAt: number | null, f
     "- 只有真有话想说才发：接着之前聊的事、问问她在读的书或在做的事、关心一下（睡眠、吃饭）、分享刚想到的东西。别为了发而发。",
     "- 一条，短，像朋友随手发的。不要自我介绍，不要说「我是来主动联系你的」，不要问候套话，不要说教。",
     "- 不想发就只回复 [skip]，什么都别多说。",
+    unanswered ? `- 你已经连着发了 ${unanswered} 条主动消息，她都还没回。别催，别重复同一个话题，别问「怎么不理我」；要发就换个很轻的方式，多数时候 [skip] 更好。` : "",
     "- 你的回复只能是要发给她的话本身（或 [skip]），不要加任何前后说明。",
+    `- 回复最后另起一行，写 [next: 45m] 或 [next: 3h] 这样的标记，告诉系统你想多久之后再醒来看一次（最短 ${MIN_WAKE_MIN} 分钟，最长 8 小时）。刚聊得热、她可能马上回，就短一点；深夜、她在忙、或者她还没回你上一条，就长一点。发了消息或 [skip] 都要写。这一行不会发给她。`,
     force ? "这次是小月在设置里手动点了「现在试一条」来测试，请务必真的写一条，不要 [skip]。" : "",
   ].filter(Boolean).join("\n");
 }
@@ -90,6 +111,8 @@ export interface HeartbeatResult {
   text?: string;
   pushed?: number;
   pushErrors?: string[];
+  called?: boolean; // 这次真的调了 Claude（花了额度）
+  nextMin?: number | null; // Claude 自己定的下次醒来时间（分钟）
 }
 
 let running = false;
@@ -104,16 +127,18 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
     const now = Date.now();
     const conv = db.mainConversation(DEFAULT_MODEL);
     const last = db.lastMessage(conv.id);
+    const tail = db.trailingProactive(conv.id);
 
     if (!opts.force) {
       if (!s.enabled) return skip("没有开启主动消息");
       if (!db.listPushSubs().length) return skip("还没有设备开启通知");
       if (inQuietHours(s, now)) return skip("安静时段");
-      if (last?.role === "assistant" && last.kind === "proactive") return skip("上一条主动消息她还没回");
       if (last && now - last.created_at < 45 * 60_000) return skip("刚聊过");
       const st = db.proactiveStats(conv.id, localDayStart(s.tz, now));
-      if (st.count >= s.maxPerDay) return skip("今天已经发够了");
-      if (st.lastAt && now - st.lastAt < 3 * 3600_000) return skip("离上一条主动消息太近");
+      if (s.maxPerDay > 0 && st.count >= s.maxPerDay) return skip("今天已经发够了");
+      const gap = requiredGapMs(tail.count);
+      if (gap === null) return skip("连着发了几条她都没回，先不打扰了，等她先说话");
+      if (tail.lastAt && now - tail.lastAt < gap) return skip(`她还没回上一条，要隔久一点（${Math.round(gap / 3600_000)} 小时）`);
     }
 
     const fresh = db.getConversation(conv.id)!;
@@ -121,7 +146,7 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
     const result = await streamChat({
       model,
       system: await buildSystem(fresh),
-      messages: [...buildHistory(fresh), { role: "user", content: instruction(s, now, last?.created_at ?? null, Boolean(opts.force)) }],
+      messages: [...buildHistory(fresh), { role: "user", content: instruction(s, now, last?.created_at ?? null, Boolean(opts.force), tail.count) }],
       signal: AbortSignal.timeout(120_000),
       onText: () => {},
       onTool: () => {},
@@ -130,13 +155,13 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
     });
 
     // 只取最后一轮的文字：调用工具之前说的话不算
-    const text = result.finalText.trim();
-    if (!text || /^\[skip\]/i.test(text) || result.stopReason === "refusal") return skip("Claude 觉得现在不用发");
+    const { text, minutes } = parseNext(result.finalText);
+    if (!text || /^\[skip\]/i.test(text) || result.stopReason === "refusal") return { ...skip("Claude 觉得现在不用发"), called: true, nextMin: minutes };
     // 心跳指令里附带了手机动态（由代码取的真实数据），记成用过 device_activity，否则之后会被当成"没查就说"
     const sources = deviceEnabled && !result.toolsUsed.includes("device_activity") ? [...result.toolsUsed, "device_activity"] : result.toolsUsed;
     db.addMessage(conv.id, "assistant", stripToolMarks(text), [], "proactive", sources);
     const push = await sendPush({ title: "Claude", body: preview(text), url: "/" });
-    return { status: "sent", text, pushed: push.sent, pushErrors: push.errors };
+    return { status: "sent", text, pushed: push.sent, pushErrors: push.errors, called: true, nextMin: minutes };
   } catch (err) {
     console.error("proactive:", err);
     return skip("出错：" + (err instanceof Error ? err.message : String(err)));
@@ -145,10 +170,17 @@ export async function heartbeat(opts: { force?: boolean } = {}): Promise<Heartbe
   }
 }
 
-/** 每隔一段时间跑一次心跳；间隔用 PROACTIVE_EVERY_MIN 调（默认 90 分钟） */
+/** 默认节拍用 PROACTIVE_EVERY_MIN（默认 90 分钟）；Claude 在回复末尾写了 [next: …] 就按它写的来。
+ *  被规则挡住（没调 Claude）的只隔 15 分钟再看，不花额度。下次醒来的时间存在库里，重启不丢。 */
 export function startScheduler(): void {
-  const minutes = Math.max(5, Number(process.env.PROACTIVE_EVERY_MIN ?? 90) || 90);
-  setInterval(() => {
-    void heartbeat().then((r) => console.log(`proactive: ${r.status}${r.reason ? " (" + r.reason + ")" : ""}`));
-  }, minutes * 60_000).unref();
+  const dflt = Math.max(5, Number(process.env.PROACTIVE_EVERY_MIN ?? 90) || 90);
+  const tick = async () => {
+    const due = Number(db.getSetting("proactive_next", "0")) || 0;
+    if (Date.now() < due) return;
+    const r = await heartbeat();
+    const mins = r.called ? (r.nextMin ?? dflt) : RETRY_MIN;
+    db.setSetting("proactive_next", String(Date.now() + mins * 60_000));
+    console.log(`proactive: ${r.status}${r.reason ? " (" + r.reason + ")" : ""}${r.called ? `，下次 ${mins} 分钟后${r.nextMin ? "（Claude 定的）" : ""}` : ""}`);
+  };
+  setInterval(() => void tick(), 60_000).unref();
 }

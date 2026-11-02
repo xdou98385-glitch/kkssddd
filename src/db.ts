@@ -323,6 +323,17 @@ export function updateEpisode(id: number, f: Partial<Omit<Episode, "id" | "creat
 export const getEpisode = (id: number) => db.prepare("SELECT * FROM episodes WHERE id = ?").get(id) as Episode | undefined;
 export const listEpisodes = (limit: number) => db.prepare("SELECT * FROM episodes ORDER BY id DESC LIMIT ?").all(limit) as unknown as Episode[];
 
+/** 她最后一条消息之后，Claude 连着发了几条她还没回的主动消息，以及最后一条是什么时候 */
+export function trailingProactive(conversationId: string): { count: number; lastAt: number } {
+  const rows = db.prepare("SELECT role, kind, created_at FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 12").all(conversationId) as unknown as { role: string; kind: string | null; created_at: number }[];
+  let count = 0, lastAt = 0;
+  for (const r of rows) {
+    if (r.role === "user") break;
+    if (r.kind === "proactive") { count++; lastAt = lastAt || r.created_at; }
+  }
+  return { count, lastAt };
+}
+
 export function proactiveStats(conversationId: string, since: number): { count: number; lastAt: number } {
   const r = db
     .prepare(
