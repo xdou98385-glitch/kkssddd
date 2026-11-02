@@ -37,7 +37,7 @@ src/twitter.ts     X（推特，只读）：调 x/ 里的小服务（Python 标�
 src/call.ts        通话：录音 → ElevenLabs Scribe 识别 → Claude 用英语短句回（CALL_GUIDE，effort medium）→ 预先合成语音；两边都存进聊天（kind=call）。POST /api/call/turn（audio/* 请求体 + X-Duration-Ms；X-Call-Start 表示刚接通，由它先开口）
 src/device.ts     设备事件（快捷指令上报，GET 和 POST 都支持，token 在 ?token= 或 Authorization）
 src/auth.ts       登录（签名 cookie + 防暴力）；/api/events 和 /sw.js 等少数路径公开
-public/           底部标签栏切页（对话/电台/棋盘，body[data-page]，app.js 末尾的 setPage，地址 #radio #board）。电台页=播放器小窗+往期列表（GET /api/podcasts）。棋盘页保留输入框，回复同时镜像到 #game-say。index.html / app.js / style.css（磨砂玻璃单色风）/ login.html / sw.js / hero.png（银箔月相）
+public/           底部标签栏切页（对话/电台/棋盘，body[data-page]，app.js 末尾的 setPage，地址 #radio #board）。电台页=播放器小窗+往期列表（GET /api/podcasts）。棋盘页保留输入框，回复同时镜像到 #game-say。设置弹窗分四页（对话/连接/通知/其他，#set-tabs + body 里 data-tab，setTab()）；「连接」页按 CONN_CATS 分类、每项 <details> 折叠、标题旁显示已填写/未填，新加的连接组没归类会落到「其他」，别忘了把新 id 加进 CONN_CATS。index.html / app.js / style.css（磨砂玻璃单色风）/ login.html / sw.js / hero.png（银箔月相）
 ```
 
 ## .env 变量（只写名字）

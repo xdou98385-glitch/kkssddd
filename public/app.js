@@ -515,7 +515,17 @@ els.input.addEventListener("keydown", (e) => {
 els.input.addEventListener("input", autosize);
 
 // ---- 设置 ----
+function setTab(name) {
+  els.settings.dataset.tab = name;
+  for (const b of document.querySelectorAll("#set-tabs button")) b.setAttribute("aria-current", String(b.dataset.tab === name));
+}
+$("set-tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-tab]");
+  if (b) setTab(b.dataset.tab);
+});
+
 $("settings-btn").onclick = async () => {
+  setTab("chat");
   const st = await api("/settings");
   els.systemPrompt.value = st.system_prompt;
   $("window-preset").value = st.window_preset;
@@ -679,18 +689,58 @@ async function loadConnections() {
   const box = $("conn-list");
   let groups;
   try { groups = (await api("/connections")).groups; } catch { box.textContent = "读取失败"; return; }
-  box.replaceChildren(...groups.map(connGroup));
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  const used = new Set();
+  const nodes = [];
+  for (const [cat, ids] of CONN_CATS) {
+    const gs = ids.map((id) => byId.get(id)).filter(Boolean);
+    if (!gs.length) continue;
+    const h = document.createElement("div");
+    h.className = "conn-cat";
+    h.textContent = cat;
+    nodes.push(h, ...gs.map((g) => (used.add(g.id), connItem(g))));
+  }
+  const rest = groups.filter((g) => !used.has(g.id)); // 以后新加的连接没归类时放这里，不会丢
+  if (rest.length) {
+    const h = document.createElement("div");
+    h.className = "conn-cat";
+    h.textContent = "其他";
+    nodes.push(h, ...rest.map(connItem));
+  }
+  box.replaceChildren(...nodes);
+}
+
+// 连接按用途分组；每一项默认折叠，只露出名字和「已填写/未填」
+const CONN_CATS = [
+  ["记忆与读书", ["memos", "weread"]],
+  ["手机与生活", ["device", "weather", "calendar", "mail", "music"]],
+  ["声音", ["voice"]],
+  ["社交账号（有风险，建议用小号）", ["xhs", "douyin", "x"]],
+];
+const openConn = new Set(); // 重新渲染后保持展开的那几项
+function connItem(g) {
+  const d = document.createElement("details");
+  d.className = "conn-item";
+  d.open = openConn.has(g.id);
+  d.addEventListener("toggle", () => (d.open ? openConn.add(g.id) : openConn.delete(g.id)));
+  const sum = document.createElement("summary");
+  const name = document.createElement("span");
+  name.textContent = g.title;
+  const on = g.fields.some((f) => f.set);
+  const st = document.createElement("span");
+  st.className = "conn-state" + (on ? " on" : "");
+  st.textContent = on ? "已填写" : "未填";
+  sum.append(name, st);
+  d.append(sum, connGroup(g));
+  return d;
 }
 
 function connGroup(g) {
   const wrap = document.createElement("div");
   wrap.className = "conn";
-  const title = document.createElement("div");
-  title.className = "conn-title";
-  title.textContent = g.title;
   const hint = document.createElement("small");
   hint.textContent = g.hint;
-  wrap.append(title, hint);
+  wrap.append(hint);
 
   const inputs = {};
   for (const f of g.fields) {

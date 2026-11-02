@@ -91,50 +91,63 @@
     </nav>
   </main>
 
-  <dialog id="settings">
+  <dialog id="settings" data-tab="chat">
     <form method="dialog">
       <h2>设置</h2>
-      <label class="field"><span>模型</span>
-        <select id="model"></select>
-      </label>
-      <label class="field"><span>系统提示词</span>
-        <textarea id="system-prompt" rows="9"></textarea>
-        <small>每次对话都会带上，决定它怎么说话、怎么称呼你。</small>
-      </label>
-      <label class="field"><span>记忆窗口</span>
-        <select id="window-preset">
-          <option value="tight">紧凑：最省额度</option>
-          <option value="balanced">均衡（推荐）</option>
-          <option value="wide">宽松：多记原话</option>
-          <option value="long">很长：最费额度</option>
-        </select>
-        <small>聊太长时，旧内容会自动压成摘要带到下一段，等于无缝换窗。窗口越小越省，原话记得越少，重要的事靠摘要和记忆。</small>
-      </label>
-      <fieldset class="group" id="conn-box">
-        <legend>连接</legend>
-        <div id="conn-list"></div>
-        <p class="memory-status">密钥填进去以后只会显示「已设置」，不会再发回这个页面。ANTHROPIC_API_KEY 和登录密码仍然在服务器的 .env 里，填错会把你锁在外面，所以没放在这里。</p>
-      </fieldset>
-      <fieldset class="group">
-        <legend>主动消息</legend>
-        <label class="switch"><input type="checkbox" id="pro-on"><span>允许它主动找我（发消息并推送到手机）</span></label>
-        <div class="row3">
-          <label class="field"><span>安静时段从</span><input type="time" id="pro-qs" value="23:00"></label>
-          <label class="field"><span>到</span><input type="time" id="pro-qe" value="09:00"></label>
-          <label class="field"><span>每天最多</span>
-            <select id="pro-max"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option></select>
+      <div id="set-tabs" role="tablist">
+        <button type="button" data-tab="chat" aria-current="true">对话</button>
+        <button type="button" data-tab="conn">连接</button>
+        <button type="button" data-tab="notify">通知</button>
+        <button type="button" data-tab="more">其他</button>
+      </div>
+      <div class="set-body">
+        <div class="set-panel" data-panel="chat">
+          <label class="field"><span>模型</span>
+            <select id="model"></select>
+          </label>
+          <label class="field"><span>系统提示词</span>
+            <textarea id="system-prompt" rows="9"></textarea>
+            <small>每次对话都会带上，决定它怎么说话、怎么称呼你。</small>
+          </label>
+          <label class="field"><span>记忆窗口</span>
+            <select id="window-preset">
+              <option value="tight">紧凑：最省额度</option>
+              <option value="balanced">均衡（推荐）</option>
+              <option value="wide">宽松：多记原话</option>
+              <option value="long">很长：最费额度</option>
+            </select>
+            <small>聊太长时，旧内容会自动压成摘要带到下一段，等于无缝换窗。窗口越小越省，原话记得越少，重要的事靠摘要和记忆。</small>
           </label>
         </div>
-        <div class="push-actions">
-          <button id="push-enable" type="button">开启本机通知</button>
-          <button id="push-test" type="button">测试通知</button>
-          <button id="pro-run" type="button">现在试一条</button>
+        <div class="set-panel" data-panel="conn">
+          <p class="memory-status">点开一项填写。每一项各自「保存并测试」，不用点底部的「保存」。</p>
+          <div id="conn-list"></div>
+          <p class="memory-status">密钥填进去以后只会显示「已设置」，不会再发回这个页面。ANTHROPIC_API_KEY 和登录密码仍然在服务器的 .env 里，填错会把你锁在外面，所以没放在这里。</p>
         </div>
-        <p id="push-status" class="memory-status"></p>
-      </fieldset>
-      <div class="danger-zone">
-        <button id="reset" type="button">清空聊天重新开始</button>
-        <button id="logout" type="button" hidden>退出登录</button>
+        <div class="set-panel" data-panel="notify">
+          <fieldset class="group">
+            <label class="switch"><input type="checkbox" id="pro-on"><span>允许它主动找我（发消息并推送到手机）</span></label>
+            <div class="row3">
+              <label class="field"><span>安静时段从</span><input type="time" id="pro-qs" value="23:00"></label>
+              <label class="field"><span>到</span><input type="time" id="pro-qe" value="09:00"></label>
+              <label class="field"><span>每天最多</span>
+                <select id="pro-max"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option></select>
+              </label>
+            </div>
+            <div class="push-actions">
+              <button id="push-enable" type="button">开启本机通知</button>
+              <button id="push-test" type="button">测试通知</button>
+              <button id="pro-run" type="button">现在试一条</button>
+            </div>
+            <p id="push-status" class="memory-status"></p>
+          </fieldset>
+        </div>
+        <div class="set-panel" data-panel="more">
+          <div class="danger-zone">
+            <button id="reset" type="button">清空聊天重新开始</button>
+            <button id="logout" type="button" hidden>退出登录</button>
+          </div>
+        </div>
       </div>
       <div class="dialog-actions">
         <button value="cancel">取消</button>
