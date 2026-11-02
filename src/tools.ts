@@ -9,6 +9,7 @@ import { describeShares } from "./share.ts";
 import { weatherEnabled, weatherText, locationText } from "./weather.ts";
 import { calendarEnabled, calendarUpcoming } from "./calendar.ts";
 import { mailEnabled, mailList, mailRead } from "./mail.ts";
+import { xBookmarks, xEnabled, xFeed, xSearch, xTweet, xUser } from "./twitter.ts";
 import { musicEnabled, musicNow, musicRecent, musicTop } from "./music.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
 
@@ -408,6 +409,34 @@ const calendarTools: Tool[] = [
   },
 ];
 
+const xTools: Tool[] = [
+  {
+    def: { name: "x_feed", description: "看她 X（推特）的时间线：为你推荐，或她关注的人。", input_schema: { type: "object", properties: { type: { type: "string", enum: ["for-you", "following"] } }, required: ["type"], additionalProperties: false } },
+    run: (input) => xFeed(String(input.type ?? "for-you")),
+    label: () => "刷了眼 X 时间线",
+  },
+  {
+    def: { name: "x_search", description: "在 X 上搜索推文。", input_schema: { type: "object", properties: { query: { type: "string" }, latest: { type: "boolean", description: "true=按最新，false=按热门" } }, required: ["query", "latest"], additionalProperties: false } },
+    run: (input) => xSearch(String(input.query ?? ""), !!input.latest),
+    label: (input) => `搜了 X：${input.query}`,
+  },
+  {
+    def: { name: "x_tweet", description: "读一条推文和它的前几条回复。ref 是推文 id 或 x.com 链接。", input_schema: { type: "object", properties: { ref: { type: "string" } }, required: ["ref"], additionalProperties: false } },
+    run: (input) => xTweet(String(input.ref ?? "")),
+    label: () => "点开了一条推文",
+  },
+  {
+    def: { name: "x_user", description: "看某个 X 用户的简介和最近的推文。name 是 @ 后面的用户名。", input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"], additionalProperties: false } },
+    run: (input) => xUser(String(input.name ?? "")),
+    label: (input) => `看了 @${String(input.name ?? "").replace(/^@/, "")} 的主页`,
+  },
+  {
+    def: { name: "x_bookmarks", description: "看她 X 上的书签。", input_schema: { type: "object", properties: {}, additionalProperties: false } },
+    run: () => xBookmarks(),
+    label: () => "翻了她的 X 书签",
+  },
+];
+
 const mailTools: Tool[] = [
   {
     def: {
@@ -455,6 +484,7 @@ export const getTools = (): Tool[] => capStrict([
   ...(weatherEnabled ? weatherTools : []),
   ...(calendarEnabled ? calendarTools : []),
   ...(mailEnabled ? mailTools : []),
+  ...(xEnabled ? xTools : []),
   ...(douyinEnabled ? douyinTools : []),
   ...(douyinEnabled && douyinActionsOn() ? douyinWriteTools : []),
 ]);

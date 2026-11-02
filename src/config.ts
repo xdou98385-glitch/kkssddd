@@ -11,7 +11,7 @@ export interface Field {
   generate?: boolean; // 可以一键生成随机口令
 }
 export interface Group {
-  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music" | "weather" | "calendar" | "mail";
+  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music" | "weather" | "calendar" | "mail" | "x";
   title: string;
   hint: string;
   fields: Field[];
@@ -58,6 +58,16 @@ export const GROUPS: Group[] = [
     fields: [
       { name: "XHS_URL", label: "地址", secret: false, placeholder: "http://127.0.0.1:18060" },
       { name: "XHS_TOKEN", label: "口令（可选）", secret: true },
+    ],
+  },
+  {
+    id: "x",
+    title: "X（推特，只读）",
+    hint: "靠旁边的 X 小服务，用你已登录的 X 网页的两个值：在电脑浏览器登录 x.com，按 F12 → 应用(Application) → Cookie → https://x.com，找到 auth_token 和 ct0 两行，把「值」复制到这里（不是整个 Cookie）。它们等于账号权限，只存在你自己的服务器上，这个页面不会再显示。只能看时间线、搜索、推文、某人的主页和你的书签，不能点赞发推关注。用小号更稳。",
+    fields: [
+      { name: "TWITTER_AUTH_TOKEN", label: "auth_token", secret: true },
+      { name: "TWITTER_CT0", label: "ct0", secret: true },
+      { name: "X_URL", label: "小服务地址", secret: false, placeholder: "http://127.0.0.1:18080（不用改）" },
     ],
   },
   {

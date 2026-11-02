@@ -40,3 +40,13 @@ services:
     mem_limit: 700m
     ports:
       - "127.0.0.1:18070:18070"
+
+  # X（推特，只读）小服务。同样不默认构建：docker compose --profile x up -d --build x
+  # 只绑在本机 127.0.0.1:18080，登录凭据不落盘，每次请求由聊天网站带过来。
+  x:
+    profiles: ["x"]
+    build: ./x
+    restart: unless-stopped
+    mem_limit: 300m
+    ports:
+      - "127.0.0.1:18080:18080"
