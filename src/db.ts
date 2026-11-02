@@ -42,6 +42,15 @@ db.exec(`
     detail TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
+  CREATE TABLE IF NOT EXISTS scheduled (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    due_at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+  );
+  CREATE INDEX IF NOT EXISTS idx_scheduled_due ON scheduled(status, due_at);
   CREATE TABLE IF NOT EXISTS pending_actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at INTEGER NOT NULL,
@@ -186,7 +195,7 @@ export function addMessage(
   role: Message["role"],
   content: string,
   images: string[] = [],
-  kind: "proactive" | "podcast" | "call" | "listen" | null = null,
+  kind: "proactive" | "podcast" | "call" | "listen" | "remind" | null = null,
   tools: string[] = [],
 ): number {
   const r = db.prepare(
@@ -266,13 +275,28 @@ export function addShare(s: Omit<Share, "id" | "at">): number {
   return Number(db.prepare("INSERT INTO shares (at, platform, url, text, meta_title, meta_desc) VALUES (?, ?, ?, ?, ?, ?)").run(now(), s.platform, s.url, s.text, s.meta_title, s.meta_desc).lastInsertRowid);
 }
 export const recentShares = (limit: number, since = 0) =>
-  db.prepare("SELECT * FROM shares WHERE at >= ? ORDER BY id DESC LIMIT ?").all(since, limit) as Share[];
+  db.prepare("SELECT * FROM shares WHERE at >= ? ORDER BY id DESC LIMIT ?").all(since, limit) as unknown as Share[];
+
+// ---- 提醒和 Claude 给自己约的「找她」----
+export interface Scheduled { id: number; created_at: number; due_at: number; kind: "reminder" | "checkin"; text: string; status: string }
+export const addScheduled = (kind: Scheduled["kind"], dueAt: number, text: string): number =>
+  Number(db.prepare("INSERT INTO scheduled (created_at, due_at, kind, text) VALUES (?, ?, ?, ?)").run(now(), dueAt, kind, text).lastInsertRowid);
+export const listScheduled = () => db.prepare("SELECT * FROM scheduled WHERE status = 'pending' ORDER BY due_at").all() as unknown as Scheduled[];
+export const dueScheduled = (at: number, limit = 3) => db.prepare("SELECT * FROM scheduled WHERE status = 'pending' AND due_at <= ? ORDER BY due_at LIMIT ?").all(at, limit) as unknown as Scheduled[];
+export const getScheduled = (id: number) => db.prepare("SELECT * FROM scheduled WHERE id = ?").get(id) as Scheduled | undefined;
+export const setScheduledStatus = (id: number, status: string) => void db.prepare("UPDATE scheduled SET status = ? WHERE id = ?").run(status, id);
+export const postponeScheduled = (id: number, dueAt: number) => void db.prepare("UPDATE scheduled SET due_at = ? WHERE id = ?").run(dueAt, id);
+
+// ---- 备份：用 SQLite 自己的 VACUUM INTO 拷一份一致的快照 ----
+export function backupTo(file: string): void {
+  db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+}
 
 // ---- 待她确认的操作（Claude 起草，她点了才真执行）----
 export interface PendingAction { id: number; at: number; kind: string; summary: string; payload: string; status: string }
 export const addPending = (kind: string, summary: string, payload: unknown): number =>
   Number(db.prepare("INSERT INTO pending_actions (at, kind, summary, payload) VALUES (?, ?, ?, ?)").run(now(), kind, summary, JSON.stringify(payload)).lastInsertRowid);
-export const listPending = () => db.prepare("SELECT * FROM pending_actions WHERE status = 'pending' ORDER BY id").all() as PendingAction[];
+export const listPending = () => db.prepare("SELECT * FROM pending_actions WHERE status = 'pending' ORDER BY id").all() as unknown as PendingAction[];
 export const getPending = (id: number) => db.prepare("SELECT * FROM pending_actions WHERE id = ?").get(id) as PendingAction | undefined;
 export const setPendingStatus = (id: number, status: string) => void db.prepare("UPDATE pending_actions SET status = ? WHERE id = ?").run(status, id);
 
@@ -297,7 +321,7 @@ export function updateEpisode(id: number, f: Partial<Omit<Episode, "id" | "creat
   db.prepare(`UPDATE episodes SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => f[k] ?? null), id);
 }
 export const getEpisode = (id: number) => db.prepare("SELECT * FROM episodes WHERE id = ?").get(id) as Episode | undefined;
-export const listEpisodes = (limit: number) => db.prepare("SELECT * FROM episodes ORDER BY id DESC LIMIT ?").all(limit) as Episode[];
+export const listEpisodes = (limit: number) => db.prepare("SELECT * FROM episodes ORDER BY id DESC LIMIT ?").all(limit) as unknown as Episode[];
 
 export function proactiveStats(conversationId: string, since: number): { count: number; lastAt: number } {
   const r = db

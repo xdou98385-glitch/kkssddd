@@ -42,7 +42,7 @@ export async function recentTracks(limit: number): Promise<{ key: string; label:
 
 export async function musicNow(): Promise<string> {
   const d = await lastfm("user.getrecenttracks", { limit: "1" });
-  const t: Track | undefined = [].concat(d.recenttracks?.track ?? [])[0];
+  const t: Track | undefined = ([] as Track[]).concat(d.recenttracks?.track ?? [])[0];
   if (!t) return "Last.fm 里还没有她的听歌记录";
   if (t["@attr"]?.nowplaying === "true") return `她正在听：${line(t)}`;
   return `她现在没在放歌（或者还没同步过来）。最近一首是 ${ago(t.date?.uts)}听的：${line(t)}`;

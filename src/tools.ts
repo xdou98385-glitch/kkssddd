@@ -10,6 +10,7 @@ import { weatherEnabled, weatherText, locationText } from "./weather.ts";
 import { calendarEnabled, calendarUpcoming } from "./calendar.ts";
 import { mailEnabled, mailList, mailRead } from "./mail.ts";
 import { xBookmarks, xEnabled, xFeed, xSearch, xTweet, xUser } from "./twitter.ts";
+import { cancelScheduled, listScheduledText, schedule } from "./schedule.ts";
 import { musicEnabled, musicNow, musicRecent, musicTop } from "./music.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
 
@@ -409,6 +410,38 @@ const calendarTools: Tool[] = [
   },
 ];
 
+// 提醒和约时间找她：不需要任何配置，一直可用
+const scheduleTools: Tool[] = [
+  {
+    def: {
+      name: "schedule_reminder",
+      description: "替她记一个提醒，到点你会发消息提醒她（同时推送到手机）。when 是她当地时间 YYYY-MM-DD HH:MM，对照她最新一条消息开头的时间来算（「明天九点」就按那条消息的日期推）。只在她要你提醒她某件事时用。",
+      input_schema: { type: "object", properties: { when: { type: "string", description: "YYYY-MM-DD HH:MM，她当地时间" }, text: { type: "string", description: "要提醒的事，写清楚" } }, required: ["when", "text"], additionalProperties: false },
+    },
+    run: async (input) => schedule("reminder", String(input.when ?? ""), String(input.text ?? "")),
+    label: () => "记下了一个提醒",
+  },
+  {
+    def: {
+      name: "schedule_checkin",
+      description: "给自己约一个时间主动找她（到点你会再想想要不要发、发什么，发之前可以先用工具）。用在她说了有件事要发生、你想之后问问结果的时候，比如考试、面试、看医生、情绪不好的第二天。别滥用；她没同意的话，也要在回复里告诉她你约了。",
+      input_schema: { type: "object", properties: { when: { type: "string", description: "YYYY-MM-DD HH:MM，她当地时间" }, reason: { type: "string", description: "为什么要在那时找她、想说什么" } }, required: ["when", "reason"], additionalProperties: false },
+    },
+    run: async (input) => schedule("checkin", String(input.when ?? ""), String(input.reason ?? "")),
+    label: () => "给自己约了个时间找她",
+  },
+  {
+    def: { name: "list_scheduled", description: "看现在有哪些待发的提醒和你约好要找她的时间。", input_schema: { type: "object", properties: {}, additionalProperties: false } },
+    run: async () => listScheduledText(),
+    label: () => "看了待发的提醒",
+  },
+  {
+    def: { name: "cancel_scheduled", description: "取消一条待发的提醒或约好的时间（编号来自 list_scheduled 或记下时的返回）。", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"], additionalProperties: false } },
+    run: async (input) => cancelScheduled(Number(input.id)),
+    label: () => "取消了一条提醒",
+  },
+];
+
 const xTools: Tool[] = [
   {
     def: { name: "x_feed", description: "看她 X（推特）的时间线：为你推荐，或她关注的人。", input_schema: { type: "object", properties: { type: { type: "string", enum: ["for-you", "following"] } }, required: ["type"], additionalProperties: false } },
@@ -475,6 +508,7 @@ function capStrict(tools: Tool[]): Tool[] {
 }
 export const getTools = (): Tool[] => capStrict([
   clockTool,
+  ...scheduleTools,
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),
   ...(wereadEnabled ? [wereadTool] : []),

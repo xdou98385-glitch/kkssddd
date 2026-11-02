@@ -28,7 +28,7 @@ async function withInbox<T>(fn: (c: Client) => Promise<T>): Promise<T> {
     throw new MailError("连不上 Gmail：" + (e.message ?? err));
   }
   try {
-    const lock = await c.getMailboxLock("INBOX", { readonly: true });
+    const lock = await c.getMailboxLock("INBOX", { readOnly: true });
     try { return await fn(c); } finally { lock.release(); }
   } catch (err) {
     if (err instanceof MailError) throw err;
@@ -39,7 +39,7 @@ async function withInbox<T>(fn: (c: Client) => Promise<T>): Promise<T> {
 }
 
 const fmtFrom = (a?: { name?: string; address?: string }[]) => (a?.[0] ? `${a[0].name ? a[0].name + " " : ""}<${a[0].address ?? "?"}>` : "?");
-const fmtDate = (d?: Date) => (d ? new Date(d).toLocaleString("zh-CN", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "");
+const fmtDate = (d?: Date | string) => (d ? new Date(d).toLocaleString("zh-CN", { timeZone: "Asia/Tokyo", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "");
 
 /** 列邮件：不带 query 时看最新的；unread 只看未读；query 用 Gmail 的搜索语法（from:xx newer_than:3d） */
 export async function mailList(opts: { count: number; unread: boolean; query: string }): Promise<string> {
@@ -49,7 +49,7 @@ export async function mailList(opts: { count: number; unread: boolean; query: st
     const uids = ((await c.search(criteria, { uid: true })) || []) as number[];
     if (!uids.length) return opts.query ? "没有匹配的邮件" : opts.unread ? "没有未读邮件" : "收件箱是空的";
     const pick = uids.sort((a, b) => b - a).slice(0, n);
-    const rows: { uid: number; seen: boolean; date?: Date; from: string; subject: string }[] = [];
+    const rows: { uid: number; seen: boolean; date?: Date | string; from: string; subject: string }[] = [];
     for await (const m of c.fetch(pick, { uid: true, flags: true, envelope: true }, { uid: true })) {
       rows.push({ uid: m.uid, seen: m.flags?.has("\\Seen") ?? true, date: m.envelope?.date, from: fmtFrom(m.envelope?.from), subject: m.envelope?.subject ?? "（无标题）" });
     }

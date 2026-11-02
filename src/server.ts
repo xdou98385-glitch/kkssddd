@@ -16,6 +16,8 @@ import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
 import { getListen, startListenScheduler, updateListen } from "./listen.ts";
+import { startSchedulerTick } from "./scheduler.ts";
+import { latestBackupPath, listBackups, runBackup, startBackups } from "./backup.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { startPodcast } from "./podcast.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
@@ -27,6 +29,7 @@ import { weatherStatus } from "./weather.ts";
 import { calendarStatus } from "./calendar.ts";
 import { mailStatus } from "./mail.ts";
 import { xStatus } from "./twitter.ts";
+import { usedToday as searchesToday, webSearchLimit, webSearchSwitch } from "./websearch.ts";
 import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
 import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
 import { DEFAULT_MODEL, MODELS, describeError, findModel, streamChat } from "./claude.ts";
@@ -103,6 +106,18 @@ app.post("/api/push/unsubscribe", async (c) => {
 app.post("/api/push/test", async (c) => c.json(await sendPush({ title: "Claude", body: "通知已经通了。", url: "/" })));
 
 app.get("/api/proactive", (c) => c.json({ ...getProactive(), subscriptions: db.listPushSubs().length }));
+
+// 备份：状态 / 立即备份 / 下载最新一份
+app.get("/api/backup", (c) => c.json({ backups: listBackups() }));
+app.post("/api/backup", (c) => {
+  try { return c.json({ name: runBackup(true), backups: listBackups() }); } catch (err) { return c.json({ error: (err as Error).message }, 500); }
+});
+app.get("/api/backup/download", (c) => {
+  const p = latestBackupPath();
+  if (!p) return c.json({ error: "还没有备份" }, 404);
+  const name = p.split("/").pop()!;
+  return new Response(readFileSync(p), { headers: { "Content-Type": "application/octet-stream", "Content-Disposition": `attachment; filename="${name}"` } });
+});
 
 app.get("/api/listen", (c) => c.json(getListen()));
 app.put("/api/listen", async (c) => {
@@ -342,6 +357,7 @@ app.post("/api/connections/:group/test", async (c) => {
   if (id === "calendar") return c.json(await calendarStatus());
   if (id === "mail") return c.json(await mailStatus());
   if (id === "x") return c.json(await xStatus());
+  if (id === "search") return c.json(webSearchSwitch() ? { enabled: true, ok: true, detail: `已开启。今天已搜 ${searchesToday()}/${webSearchLimit()} 次。要真正搜到，还得在 Anthropic Console 里允许 Web search。` } : { enabled: false });
   if (id === "douyin") return c.json(c.req.query("deep") === "1" ? await douyinProbe() : await douyinStatus());
   const last = db.latestEvent();
   return c.json({ enabled: deviceEnabled, ok: deviceEnabled, detail: last ? `最近一条事件：${new Date(last.at).toLocaleString("zh-CN")}` : "口令已设置，还没收到过事件" });
@@ -429,6 +445,8 @@ const server = serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.
   console.log(`listening on http://localhost:${port}`);
   startScheduler();
   startListenScheduler();
+  startSchedulerTick();
+  startBackups();
   console.log(`device events: ${deviceEnabled ? "ON" : "OFF (DEVICE_TOKEN not set)"}`);
   console.log(`tts: ${ttsEnabled ? "ON (ElevenLabs)" : "OFF (ELEVENLABS_API_KEY / ELEVENLABS_VOICE_ID not set)"}`);
   const s = await memosStatus();

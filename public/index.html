@@ -152,6 +152,16 @@
           </fieldset>
         </div>
         <div class="set-panel" data-panel="more">
+          <fieldset class="group">
+            <label class="field"><span>备份</span>
+              <small>每天自动备份一份聊天库，留最近 7 份。备份和聊天库在同一台服务器上，防的是手滑和损坏；想防服务器出事，隔一阵点「下载最新备份」存到自己电脑。备份里有所有密钥，别发给别人。</small>
+            </label>
+            <div class="push-actions">
+              <button id="backup-run" type="button">立即备份</button>
+              <a id="backup-dl" class="btn" href="/api/backup/download" download>下载最新备份</a>
+            </div>
+            <p id="backup-status" class="memory-status"></p>
+          </fieldset>
           <div class="danger-zone">
             <button id="reset" type="button">清空聊天重新开始</button>
             <button id="logout" type="button" hidden>退出登录</button>

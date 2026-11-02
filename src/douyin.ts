@@ -117,8 +117,8 @@ export async function resolveWorkRef(input: string): Promise<string> {
     if (!/(^|\.)(douyin\.com|iesdouyin\.com)$/.test(u.hostname)) throw new DouyinError("只能解析抖音的链接");
     const found = direct(cur);
     if (found) return found;
-    const res = await fetch(cur, { redirect: "manual", signal: AbortSignal.timeout(8000), headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" } }).catch(() => null);
-    const loc = res?.headers.get("location");
+    const res: Response | null = await fetch(cur, { redirect: "manual", signal: AbortSignal.timeout(8000), headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" } }).catch(() => null);
+    const loc: string | null | undefined = res?.headers.get("location");
     if (!loc) break;
     cur = new URL(loc, cur).toString();
     const f2 = direct(cur);

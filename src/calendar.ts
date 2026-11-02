@@ -42,7 +42,7 @@ function occurrences(data: Record<string, any>, from: Date, to: Date): Occ[] {
     };
     if (e.rrule) {
       try {
-        for (const o of ical.expandRecurringEvent(e, { from, to, includeOverrides: true, excludeExceptions: true })) push(new Date(o.start), new Date(o.end ?? new Date(o.start).getTime() + dur), o.event ?? e);
+        for (const o of ical.expandRecurringEvent(e, { from, to, includeOverrides: true, expandOngoing: true })) push(new Date(o.start), new Date(o.end ?? new Date(o.start).getTime() + dur), o.event ?? e);
       } catch { /* 个别奇怪的重复规则跳过 */ }
     } else push(new Date(e.start), new Date(e.end ?? new Date(e.start).getTime() + dur), e);
   }

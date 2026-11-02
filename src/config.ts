@@ -11,7 +11,7 @@ export interface Field {
   generate?: boolean; // 可以一键生成随机口令
 }
 export interface Group {
-  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music" | "weather" | "calendar" | "mail" | "x";
+  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music" | "weather" | "calendar" | "mail" | "x" | "search";
   title: string;
   hint: string;
   fields: Field[];
@@ -69,6 +69,12 @@ export const GROUPS: Group[] = [
       { name: "TWITTER_CT0", label: "ct0", secret: true },
       { name: "X_URL", label: "小服务地址", secret: false, placeholder: "http://127.0.0.1:18080（不用改）" },
     ],
+  },
+  {
+    id: "search",
+    title: "联网搜索",
+    hint: "填 on 开启。开了以后 Claude 能自己上网搜（最新消息、营业时间、车次这类）。搜索由 Anthropic 执行，按次另外计费（每千次约 10 美元），每天有上限（默认 30 次）。第一次用要先在 Anthropic Console 的组织设置里允许 Web search，没允许的话聊天会报错。",
+    fields: [{ name: "WEB_SEARCH", label: "联网搜索", secret: false, placeholder: "填 on 开启，留空关闭" }],
   },
   {
     id: "calendar",

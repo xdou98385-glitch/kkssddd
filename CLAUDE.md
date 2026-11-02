@@ -33,8 +33,11 @@ src/music.ts       陪听：读 Last.fm（user.getrecenttracks/gettopartists/get
 src/listen.ts      陪听模式：设置「通知」页开关（settings 键 listen：enabled/maxPerHour，默认关，4 句/小时）；每 30 秒读一次 Last.fm 最近 6 首，换歌后下一轮仍在放才考虑说话，commentedKey 保证一首只问一次；限制：安静时段（沿用主动消息的）、每小时上限、两句至少隔 4 分钟、她 2 分钟内发过话不抢、Claude 可 [skip]；写入 kind='listen' 的消息（不占主动消息的每日额度，也不推送）；effort low。前端在陪听开着且页面可见时每 20 秒 refreshThread。用假 Last.fm + 假 Claude 测过流程。真正「点歌放给她听」（YouTube 嵌入播放器）没做。
 src/weather.ts     天气+位置：Open-Meteo（geocoding 填城市、forecast 取现在+3 天）；位置来自快捷指令往 /api/events 报的 kind=location（detail=`纬度,经度`，recordEvent 校验并截到两位小数，约 1 公里），6 小时内最新一条优先，否则退回设置页「天气和位置」的 WEATHER_CITY；坐标转地名用 OSM Nominatim（按坐标缓存）。工具 weather / where_am_i，WEATHER_GUIDE。谷歌地图时间线没有可用接口，所以位置靠快捷指令。只用 mock 测过。
 src/calendar.ts    日历（只读）：谷歌日历「iCal 私人地址」(GCAL_ICS_URL，只写不读，必须以 https://calendar.google.com/calendar/ical/ 开头) → node-ical 解析并展开重复日程，缓存 5 分钟。工具 calendar_upcoming，CALENDAR_GUIDE。不能新建（要写得走 OAuth，没做）。
-src/mail.ts        邮箱（只读收件箱）：Gmail IMAP（imapflow）+ 应用专用密码（GMAIL_USER / GMAIL_APP_PASSWORD，后者只写不读）；以 readonly 打开所以不会标已读；mail_list（支持 Gmail 搜索语法 gmailraw）/ mail_read（正文最多 3000 字，mailparser）。邮件内容当不可信内容（工具结果里带提醒 + MAIL_GUIDE）。不发信、不删信。日历和邮件都只用 mock/假 IMAP 客户端测过，没连过真 Gmail。
+src/mail.ts        邮箱（只读收件箱）：Gmail IMAP（imapflow）+ 应用专用密码（GMAIL_USER / GMAIL_APP_PASSWORD，后者只写不读）；以 readOnly 打开（选项名大小写：readOnly，之前误写成 readonly 导致没生效，已修，tsc 才发现）所以不会标已读；mail_list（支持 Gmail 搜索语法 gmailraw）/ mail_read（正文最多 3000 字，mailparser）。邮件内容当不可信内容（工具结果里带提醒 + MAIL_GUIDE）。不发信、不删信。日历和邮件都只用 mock/假 IMAP 客户端测过，没连过真 Gmail。
 src/twitter.ts     X（推特，只读）：调 x/ 里的小服务（Python 标准库 HTTP 服务，里面用 PyPI 的 jackwener/twitter-cli==0.8.5 当命令行跑，Apache-2.0；只放行 feed/search/tweet/user/user-posts/bookmarks/whoami，点赞发推关注删除都不放行，参数校验后不经 shell）。设置页「X」填 TWITTER_AUTH_TOKEN + TWITTER_CT0（都只写不读；从浏览器 Cookie 里取这两个值），X_URL 默认 http://127.0.0.1:18080。compose 的 x 服务 profile=x：`docker compose --profile x up -d --build x`。工具 x_feed/x_search/x_tweet/x_user/x_bookmarks，X_GUIDE（推文当不可信内容）；间隔 X_GAP_SECONDS(6)，每天 X_DAILY_CALLS(40)。选 twitter-cli 而不是 twikit：twikit 最后一次实质提交是 2025-04，twitter-cli 2026-05 还在适配接口变化。X 官方 API 2026-02 起只有按量付费、没免费读取。只用假 twitter 命令测过，没连过真 X；机房 IP 会不会被 X 盯上、凭据会不会被收回都未知。
+src/schedule.ts + scheduler.ts  提醒和 Claude 给自己约的「找她」：scheduled 表（kind=reminder|checkin，status pending/done/skipped/failed/cancelled）。工具 schedule_reminder / schedule_checkin / list_scheduled / cancel_scheduled 一直可用（SCHEDULE_GUIDE）；when 是她当地时间 `YYYY-MM-DD HH:MM`（zonedToMs 按她的时区换算，时区取 settings.tz，UTC 时退回 Asia/Tokyo），最多 20 条、60 天内。scheduler.ts 每 30 秒查到点的：到点让 Claude 现写（effort medium，可先调工具），写成 kind='remind' 的消息 + 推送；提醒一定发（Claude 出错/skip 就发「提醒：原文」兜底），checkin 可 [skip]，遇安静时段往后挪 30 分钟，每天最多 3 次。启动时会补发停机期间到点的。心跳指令（proactive.ts）里也鼓励它先用工具、想改时间就 schedule_checkin 后 [skip]。
+src/websearch.ts   联网搜索：Anthropic 服务端工具 web_search_20250305（搜索由 Anthropic 执行，按次另计费，约 $10/千次），设置页「联网搜索」填 on 开启（WEB_SEARCH），每天上限 WEB_SEARCH_DAILY(30)、每次回复最多 3 次；用完当天就不再给这个工具。claude.ts 处理 pause_turn（原样带回 content 接着跑）、统计 usage.server_tool_use.web_search_requests、把「真搜过」记进 toolsUsed。要先在 Anthropic Console 组织设置里允许 Web search，否则聊天会报错。
+src/backup.ts      每天 VACUUM INTO 备份到 DB 同目录的 backups/（./data/backups），留 7 份；设置「其他」页有「立即备份」「下载最新备份」。备份与库同盘，防手滑/损坏不防整机丢失；备份里含所有密钥。
 src/call.ts        通话：录音 → ElevenLabs Scribe 识别 → Claude 用英语短句回（CALL_GUIDE，effort medium）→ 预先合成语音；两边都存进聊天（kind=call）。POST /api/call/turn（audio/* 请求体 + X-Duration-Ms；X-Call-Start 表示刚接通，由它先开口）
 src/device.ts     设备事件（快捷指令上报，GET 和 POST 都支持，token 在 ?token= 或 Authorization）
 src/auth.ts       登录（签名 cookie + 防暴力）；/api/events 和 /sw.js 等少数路径公开
@@ -44,6 +47,9 @@ public/           底部标签栏切页（对话/电台/棋盘，body[data-page]
 ## .env 变量（只写名字）
 （下面带 API key/地址的几项现在也能在设置页「连接」里填，她不用再进终端；.env 仍然有效。）
 ANTHROPIC_API_KEY, APP_PASSWORD, MEMOS_URL, MEMOS_TOKEN, WEREAD_API_KEY, DEVICE_TOKEN, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, TTS_MODEL(默认 eleven_flash_v2_5), TTS_MAX_CHARS(400), TTS_MONTHLY_CHARS(20000), TTS_SPEED(0.85)/TTS_STABILITY(0.35)/TTS_STYLE(0.3), TTS_CALL_ME(默认 Kay), TTS_TRANSLATE_TO(默认 English), TTS_PODCAST_MODEL(eleven_multilingual_v2)/POD_SPEED(0.95)/POD_STABILITY(0.45)/POD_STYLE(0.4), CALL_MONTHLY_MINUTES(30), CALL_MAX_MINUTES(10), CALL_STT_MODEL(scribe_v1，被拒绝时自动换 scribe_v2), PROACTIVE_EVERY_MIN(默认90), PUSH_CONTACT(可空), PORT/DB_PATH。空值要用 `||` 而不是 `??` 判断（compose 的 env_file 会把空行变成空字符串）。
+
+## 类型检查
+`npx tsc --noEmit`（`npm ci` 之后）——能查出拼错的选项名这类 mock 测试发现不了的问题，改完先跑。
 
 ## 部署
 服务器上：`cd ~/kkssddd && git pull && docker compose up -d --build`。数据在 `./data/`（chat.db + uploads）。设置页(⚙)里有 Memos/读书/设备/通知的连接状态行，启动日志有 `memory:`/`weread:`/`device events:` 行，排查先看这些。

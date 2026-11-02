@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { findTool, getTools } from "./tools.ts";
+import { noteWebSearches, webSearchTools } from "./websearch.ts";
 
 // key 从环境变量 ANTHROPIC_API_KEY 读取，不要写进代码
 const client = new Anthropic();
@@ -51,6 +52,7 @@ export async function streamChat(opts: {
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
     const toolList = getTools();
+    const serverTools = webSearchTools(); // 联网搜索（Anthropic 那边执行），没开或今天用完了就是空的
     const stream = client.beta.messages.stream(
       {
         model: model.id,
@@ -59,7 +61,7 @@ export async function streamChat(opts: {
         cache_control: { type: "ephemeral" },
         ...(opts.system ? { system: opts.system } : {}),
         ...(model.effort ? { output_config: { effort: opts.effort ?? model.effort } } : {}),
-        ...(toolList.length ? { tools: toolList.map((t) => t.def) } : {}),
+        ...(toolList.length || serverTools.length ? { tools: [...toolList.map((t) => t.def), ...serverTools] } : {}),
         // 被安全分类器拒绝时，服务器自动换模型重跑
         ...(model.fallback
           ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }
@@ -96,6 +98,18 @@ export async function streamChat(opts: {
     used.cacheRead += final.usage.cache_read_input_tokens ?? 0;
     used.cacheWrite += final.usage.cache_creation_input_tokens ?? 0;
     stopReason = final.stop_reason;
+    // 联网搜索：Anthropic 那边已经搜完了，这里只记次数、记下「真的搜过」、给界面一行小字
+    const searches = final.usage.server_tool_use?.web_search_requests ?? 0;
+    if (searches) {
+      noteWebSearches(searches);
+      if (!toolsUsed.includes("web_search")) toolsUsed.push("web_search");
+      for (const b of final.content) if (b.type === "server_tool_use" && b.name === "web_search") opts.onTool(`搜了网页：${String((b.input as { query?: string })?.query ?? "").slice(0, 40)}`, "web_search");
+    }
+    // 服务端工具跑太久时会先停一下（pause_turn）：把已有内容原样带回，让它接着做
+    if (stopReason === "pause_turn") {
+      messages.push({ role: "assistant", content: final.content });
+      continue;
+    }
     if (stopReason !== "tool_use") break;
 
     // 原样带回 assistant 的完整内容（含 thinking 块），再附上工具结果

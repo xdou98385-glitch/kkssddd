@@ -98,6 +98,11 @@ const TOOL_LABELS = {
   music_now: "看了眼她在听什么",
   music_recent: "翻了翻她最近听的歌",
   music_top: "看了她常听的歌",
+  web_search: "联网搜了一下",
+  schedule_reminder: "记下了一个提醒",
+  schedule_checkin: "给自己约了个时间找她",
+  list_scheduled: "看了待发的提醒",
+  cancel_scheduled: "取消了一条提醒",
   dy_like: "给一条抖音点了赞",
   dy_collect: "收藏了一条抖音",
   dy_dm_draft: "起草了一条抖音私信，等她确认",
@@ -425,7 +430,7 @@ function clearRegen() {
 function markRegen() {
   clearRegen();
   const last = els.messages.lastElementChild;
-  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || ["proactive", "podcast", "call", "listen"].includes(last.dataset.kind)) return;
+  if (!last?.classList.contains("msg") || !last.classList.contains("assistant") || ["proactive", "podcast", "call", "listen", "remind"].includes(last.dataset.kind)) return;
   if (last.querySelector(".bubble.err")) return;
   let prev = last.previousElementSibling;
   while (prev?.classList.contains("tool")) prev = prev.previousElementSibling;
@@ -532,6 +537,7 @@ $("settings-btn").onclick = async () => {
   showMemoryStatus("检查记忆连接…", false);
   loadProactiveUI();
   loadListenUI();
+  loadBackupUI();
   loadConnections();
   els.settings.showModal();
   try {
@@ -579,6 +585,22 @@ els.settings.addEventListener("close", async () => {
   }
   els.settings.returnValue = "";
 });
+
+// ---- 备份 ----
+async function loadBackupUI() {
+  try {
+    const { backups } = await api("/backup");
+    const l = backups[0];
+    setStatus("backup-status", l ? `最近一份：${new Date(l.at).toLocaleString("zh-CN")}（${(l.size / 1048576).toFixed(1)} MB），共 ${backups.length} 份` : "还没有备份，点「立即备份」。");
+    $("backup-dl").hidden = !l;
+  } catch { setStatus("backup-status", "读取备份状态失败", true); }
+}
+$("backup-run").onclick = async () => {
+  $("backup-run").disabled = true;
+  setStatus("backup-status", "备份中…");
+  try { await api("/backup", { method: "POST" }); await loadBackupUI(); } catch (err) { setStatus("backup-status", "备份失败：" + err.message, true); }
+  $("backup-run").disabled = false;
+};
 
 // ---- 陪听 ----
 let listenOn = false;
