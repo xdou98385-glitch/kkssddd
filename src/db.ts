@@ -62,6 +62,19 @@ db.exec(`
     expires_at INTEGER NOT NULL DEFAULT 0,
     note TEXT NOT NULL DEFAULT ''
   );
+  CREATE TABLE IF NOT EXISTS wishlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    spec TEXT NOT NULL DEFAULT '',
+    target_cents INTEGER NOT NULL DEFAULT 0,
+    price_cents INTEGER NOT NULL DEFAULT 0,
+    link TEXT NOT NULL DEFAULT '',
+    priority INTEGER NOT NULL DEFAULT 2,
+    status TEXT NOT NULL DEFAULT 'want',
+    note TEXT NOT NULL DEFAULT ''
+  );
   CREATE TABLE IF NOT EXISTS pending_actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at INTEGER NOT NULL,
@@ -297,6 +310,19 @@ export const dueScheduled = (at: number, limit = 3) => db.prepare("SELECT * FROM
 export const getScheduled = (id: number) => db.prepare("SELECT * FROM scheduled WHERE id = ?").get(id) as Scheduled | undefined;
 export const setScheduledStatus = (id: number, status: string) => void db.prepare("UPDATE scheduled SET status = ? WHERE id = ?").run(status, id);
 export const postponeScheduled = (id: number, dueAt: number) => void db.prepare("UPDATE scheduled SET due_at = ? WHERE id = ?").run(dueAt, id);
+
+// ---- 购物清单 ----
+export interface Wish { id: number; created_at: number; updated_at: number; name: string; spec: string; target_cents: number; price_cents: number; link: string; priority: number; status: string; note: string }
+export const addWish = (w: Pick<Wish, "name" | "spec" | "target_cents" | "price_cents" | "link" | "priority" | "note">): number =>
+  Number(db.prepare("INSERT INTO wishlist (created_at, updated_at, name, spec, target_cents, price_cents, link, priority, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(now(), now(), w.name, w.spec, w.target_cents, w.price_cents, w.link, w.priority, w.note).lastInsertRowid);
+export const listWishes = () => db.prepare("SELECT * FROM wishlist WHERE status != 'dropped' ORDER BY priority, id").all() as unknown as Wish[];
+export const getWish = (id: number) => db.prepare("SELECT * FROM wishlist WHERE id = ?").get(id) as unknown as Wish | undefined;
+export function updateWish(id: number, patch: Partial<Omit<Wish, "id" | "created_at">>): void {
+  const keys = Object.keys(patch) as (keyof typeof patch)[];
+  if (!keys.length) return;
+  db.prepare(`UPDATE wishlist SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`).run(...keys.map((k) => patch[k] as string | number), now(), id);
+}
+export const countWishes = () => Number((db.prepare("SELECT COUNT(*) AS n FROM wishlist WHERE status != 'dropped'").get() as { n: number }).n);
 
 // ---- 应用锁规则 ----
 export interface AppRule { id: number; created_at: number; app: string; kind: "window" | "limit"; start: string; end: string; limit_min: number; expires_at: number; note: string }

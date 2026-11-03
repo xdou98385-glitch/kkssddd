@@ -11,6 +11,7 @@ import { calendarEnabled, calendarUpcoming } from "./calendar.ts";
 import { mailEnabled, mailList, mailRead } from "./mail.ts";
 import { xBookmarks, xEnabled, xFeed, xSearch, xTweet, xUser } from "./twitter.ts";
 import { calc } from "./shop.ts";
+import { setBudget, wishAdd, wishList, wishUpdate } from "./wishlist.ts";
 import { addRule, listRules, removeRule, unlock } from "./lock.ts";
 import { taobaoTools } from "./taobao.ts";
 import { cancelScheduled, listScheduledText, schedule } from "./schedule.ts";
@@ -413,6 +414,30 @@ const calendarTools: Tool[] = [
   },
 ];
 
+// 购物清单：记住她想买的东西，关了聊天再回来还在
+const wishTools: Tool[] = [
+  {
+    def: {
+      name: "wish_add",
+      description: "把一件想买的东西记进她的购物清单（会一直保存）。priority：1=必买，2=想买，3=可买可不买。price 是现价，target_price 是她心里的目标价，不知道就填 0。link 没有就留空。",
+      input_schema: { type: "object", properties: { name: { type: "string" }, spec: { type: "string", description: "规格/颜色/尺码，没有留空" }, price: { type: "number" }, target_price: { type: "number" }, link: { type: "string" }, priority: { type: "number" }, note: { type: "string" } }, required: ["name", "spec", "price", "target_price", "link", "priority", "note"], additionalProperties: false },
+    },
+    run: async (i) => wishAdd(i),
+    label: () => "记进了购物清单",
+  },
+  { def: { name: "wish_list", description: "看她的购物清单：按优先级分组，带合计、已买、必买还剩多少，有预算的话对比预算。她问「清单现在多少钱」「哪些先买」时先调这个，别凭记忆报。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: async () => wishList(), label: () => "看了购物清单" },
+  {
+    def: {
+      name: "wish_update",
+      description: "改清单里某一项：更新现价、目标价、优先级，标记已买（status=bought）或划掉（status=dropped）。不改的字段填 0 或空字符串。",
+      input_schema: { type: "object", properties: { id: { type: "number" }, price: { type: "number" }, target_price: { type: "number" }, priority: { type: "number" }, status: { type: "string", enum: ["", "want", "bought", "dropped"] }, note: { type: "string" } }, required: ["id", "price", "target_price", "priority", "status", "note"], additionalProperties: false },
+    },
+    run: async (i) => wishUpdate(i),
+    label: () => "更新了购物清单",
+  },
+  { def: { name: "wish_budget", description: "记下她这次购物的总预算（元）。填 0 清除。", input_schema: { type: "object", properties: { amount: { type: "number" } }, required: ["amount"], additionalProperties: false } }, run: async (i) => setBudget(Number(i.amount)), label: () => "记下了购物预算" },
+];
+
 // 应用锁：她让你帮她管手机时间。一直可用
 const lockTools: Tool[] = [
   {
@@ -559,6 +584,7 @@ export const getTools = (): Tool[] => capStrict([
   clockTool,
   ...scheduleTools,
   ...shopTools,
+  ...wishTools,
   ...lockTools,
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),
