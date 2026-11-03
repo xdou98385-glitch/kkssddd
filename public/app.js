@@ -99,6 +99,7 @@ const TOOL_LABELS = {
   music_recent: "翻了翻她最近听的歌",
   music_top: "看了她常听的歌",
   web_search: "联网搜了一下",
+  shop_calc: "算了一下购物账",
   schedule_reminder: "记下了一个提醒",
   schedule_checkin: "给自己约了个时间找她",
   list_scheduled: "看了待发的提醒",

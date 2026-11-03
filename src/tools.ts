@@ -10,6 +10,7 @@ import { weatherEnabled, weatherText, locationText } from "./weather.ts";
 import { calendarEnabled, calendarUpcoming } from "./calendar.ts";
 import { mailEnabled, mailList, mailRead } from "./mail.ts";
 import { xBookmarks, xEnabled, xFeed, xSearch, xTweet, xUser } from "./twitter.ts";
+import { calc } from "./shop.ts";
 import { cancelScheduled, listScheduledText, schedule } from "./schedule.ts";
 import { musicEnabled, musicNow, musicRecent, musicTop } from "./music.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
@@ -410,6 +411,32 @@ const calendarTools: Tool[] = [
   },
 ];
 
+// 购物算数：不连任何平台，只做加减乘除
+const shopTools: Tool[] = [
+  {
+    def: {
+      name: "shop_calc",
+      description: "算购物账：商品合计、店铺券/立减、跨店满减、还差多少凑到下一档、每件分摊后的实付。算钱一律用它，不要心算。价格单位是元。rule_kind：none=没有满减；every=每满 threshold 减 off；tier=阶梯，用 tiers。不要的参数填 0 或空数组。",
+      input_schema: {
+        type: "object",
+        properties: {
+          items: { type: "array", items: { type: "object", properties: { name: { type: "string" }, price: { type: "number" }, qty: { type: "number" } }, required: ["name", "price", "qty"], additionalProperties: false } },
+          coupons: { type: "array", items: { type: "number" }, description: "店铺券、官方立减这类先扣的金额，每项一个数" },
+          rule_kind: { type: "string", enum: ["none", "every", "tier"] },
+          threshold: { type: "number", description: "every：每满多少" },
+          off: { type: "number", description: "every：减多少" },
+          tiers: { type: "array", items: { type: "object", properties: { threshold: { type: "number" }, off: { type: "number" } }, required: ["threshold", "off"], additionalProperties: false } },
+          cap: { type: "number", description: "满减封顶多少，没有封顶填 0" },
+        },
+        required: ["items", "coupons", "rule_kind", "threshold", "off", "tiers", "cap"],
+        additionalProperties: false,
+      },
+    },
+    run: async (i) => calc(i.items, i.rule_kind === "none" ? null : { kind: i.rule_kind, threshold: i.threshold, off: i.off, tiers: i.tiers, cap: i.cap > 0 ? i.cap : undefined }, i.coupons),
+    label: () => "算了一下购物账",
+  },
+];
+
 // 提醒和约时间找她：不需要任何配置，一直可用
 const scheduleTools: Tool[] = [
   {
@@ -509,6 +536,7 @@ function capStrict(tools: Tool[]): Tool[] {
 export const getTools = (): Tool[] => capStrict([
   clockTool,
   ...scheduleTools,
+  ...shopTools,
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),
   ...(wereadEnabled ? [wereadTool] : []),
