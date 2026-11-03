@@ -142,7 +142,7 @@ function renderBatch(msgs) {
   for (const m of msgs) {
     const k = dayKey(m.created_at);
     if (k !== day) { nodes.push(dayDivider(k)); day = k; }
-    if (m.role === "assistant") for (const t of m.tools || []) nodes.push(toolNote(TOOL_LABELS[t] || t));
+    if (m.role === "assistant") for (const t of m.tools || []) nodes.push(toolNote(TOOL_LABELS[t] || (t.startsWith("tb_") ? "用淘宝客户端操作了一下" : t)));
     const b = bubble(m.role, m.content, m.images, m.created_at);
     if (m.kind) b.wrap.dataset.kind = m.kind;
     if (m.role === "assistant") { b.wrap.dataset.id = m.id; addSpeak(b.wrap); }
@@ -759,6 +759,7 @@ const CONN_CATS = [
   ["记忆与读书", ["memos", "weread"]],
   ["手机与生活", ["device", "weather", "calendar", "mail", "music"]],
   ["声音", ["voice"]],
+  ["联网与购物", ["search", "taobao"]],
   ["社交账号（有风险，建议用小号）", ["xhs", "douyin", "x"]],
 ];
 const openConn = new Set(); // 重新渲染后保持展开的那几项

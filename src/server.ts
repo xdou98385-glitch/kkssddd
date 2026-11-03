@@ -29,6 +29,7 @@ import { weatherStatus } from "./weather.ts";
 import { calendarStatus } from "./calendar.ts";
 import { mailStatus } from "./mail.ts";
 import { xStatus } from "./twitter.ts";
+import { startTaobao, taobaoStatus } from "./taobao.ts";
 import { usedToday as searchesToday, webSearchLimit, webSearchSwitch } from "./websearch.ts";
 import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
 import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
@@ -357,6 +358,7 @@ app.post("/api/connections/:group/test", async (c) => {
   if (id === "calendar") return c.json(await calendarStatus());
   if (id === "mail") return c.json(await mailStatus());
   if (id === "x") return c.json(await xStatus());
+  if (id === "taobao") return c.json(await taobaoStatus());
   if (id === "search") return c.json(webSearchSwitch() ? { enabled: true, ok: true, detail: `已开启。今天已搜 ${searchesToday()}/${webSearchLimit()} 次。要真正搜到，还得在 Anthropic Console 里允许 Web search。` } : { enabled: false });
   if (id === "douyin") return c.json(c.req.query("deep") === "1" ? await douyinProbe() : await douyinStatus());
   const last = db.latestEvent();
@@ -447,6 +449,7 @@ const server = serve({ fetch: app.fetch, port, hostname: process.env.HOST ?? "0.
   startListenScheduler();
   startSchedulerTick();
   startBackups();
+  startTaobao();
   console.log(`device events: ${deviceEnabled ? "ON" : "OFF (DEVICE_TOKEN not set)"}`);
   console.log(`tts: ${ttsEnabled ? "ON (ElevenLabs)" : "OFF (ELEVENLABS_API_KEY / ELEVENLABS_VOICE_ID not set)"}`);
   const s = await memosStatus();

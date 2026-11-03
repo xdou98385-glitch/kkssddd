@@ -11,6 +11,7 @@ import { calendarEnabled, calendarUpcoming } from "./calendar.ts";
 import { mailEnabled, mailList, mailRead } from "./mail.ts";
 import { xBookmarks, xEnabled, xFeed, xSearch, xTweet, xUser } from "./twitter.ts";
 import { calc } from "./shop.ts";
+import { taobaoTools } from "./taobao.ts";
 import { cancelScheduled, listScheduledText, schedule } from "./schedule.ts";
 import { musicEnabled, musicNow, musicRecent, musicTop } from "./music.ts";
 import { cellName, currentOrNew, hintText, parseCell, place, saveGame, viewText } from "./sudoku.ts";
@@ -542,6 +543,7 @@ export const getTools = (): Tool[] => capStrict([
   ...(wereadEnabled ? [wereadTool] : []),
   ...(deviceEnabled ? [deviceTool, shareTool] : []),
   ...(xhsEnabled ? xhsTools : []),
+  ...taobaoTools(),
   ...(musicEnabled ? musicTools : []),
   ...(weatherEnabled ? weatherTools : []),
   ...(calendarEnabled ? calendarTools : []),

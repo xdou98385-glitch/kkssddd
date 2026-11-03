@@ -11,7 +11,7 @@ export interface Field {
   generate?: boolean; // 可以一键生成随机口令
 }
 export interface Group {
-  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music" | "weather" | "calendar" | "mail" | "x" | "search";
+  id: "memos" | "weread" | "device" | "voice" | "xhs" | "douyin" | "music" | "weather" | "calendar" | "mail" | "x" | "search" | "taobao";
   title: string;
   hint: string;
   fields: Field[];
@@ -68,6 +68,16 @@ export const GROUPS: Group[] = [
       { name: "TWITTER_AUTH_TOKEN", label: "auth_token", secret: true },
       { name: "TWITTER_CT0", label: "ct0", secret: true },
       { name: "X_URL", label: "小服务地址", secret: false, placeholder: "http://127.0.0.1:18080（不用改）" },
+    ],
+  },
+  {
+    id: "taobao",
+    title: "淘宝（买家，经电脑客户端）",
+    hint: "连你电脑上「淘宝桌面客户端」自带的 MCP（官方功能：搜索、比价、看详情、加购物车；付款你自己点，也看不到评价）。步骤：1) 电脑装淘宝桌面客户端并登录，在客户端里开启 MCP；2) 电脑和服务器都装 Tailscale 并登录同一个账号；3) 电脑上运行 tailscale serve --bg --tcp 13654 tcp://127.0.0.1:3654（3654 以客户端里显示的端口为准）；4) 这里填 http://电脑的Tailscale地址:13654/mcp。电脑没开或客户端没运行时，Claude 会告诉你连不上。开启后你的收货地址、订单、购物车等可能被 Claude 读到。",
+    fields: [
+      { name: "TAOBAO_MCP_URL", label: "MCP 地址", secret: false, placeholder: "http://100.x.x.x:13654/mcp" },
+      { name: "TAOBAO_MCP_TOKEN", label: "口令（客户端要求才填）", secret: true },
+      { name: "TAOBAO_MCP_HOST", label: "Host 头（被拒绝时才填）", secret: false, placeholder: "localhost:3654" },
     ],
   },
   {
