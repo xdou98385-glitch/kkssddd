@@ -35,10 +35,14 @@ export function userTz(): string {
 
 const clip =(v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
 
+/** 记下事件后通知的钩子（应用锁的学习模式靠它在「学习」专注模式打开时开始计时）。用钩子而不是直接 import，避免循环引用 */
+export const eventHooks: ((kind: string, app: string | null, detail: string | null, at: number) => void)[] = [];
+
 /** 校验并记录一条事件；不合法返回原因 */
 export function recordEvent(body: any): string | null {
-  const kind = clip(body?.kind, 40);
+  let kind = clip(body?.kind, 40);
   if (!kind || !/^[a-z0-9_:-]+$/i.test(kind)) return "kind 必填，只能是字母数字和 _ - :";
+  kind = kind.replace(/^foucus/i, "focus"); // 快捷指令里常见的手误：foucus_on
   const at = Number(body?.at);
   if (kind === "location") {
     // 位置只留两位小数（约 1 公里），格式不对就拒绝
@@ -46,7 +50,9 @@ export function recordEvent(body: any): string | null {
     if (!m || Math.abs(Number(m[1])) > 90 || Math.abs(Number(m[2])) > 180) return "location 的 detail 要写成 纬度,经度，例如 34.69,135.50";
     body = { ...body, detail: `${Number(m[1]).toFixed(2)},${Number(m[2]).toFixed(2)}` };
   }
-  db.addEvent(kind, clip(body?.app, 60), clip(body?.detail, 200), Number.isFinite(at) && at > 1e12 ? at : undefined);
+  const when = Number.isFinite(at) && at > 1e12 ? at : Date.now();
+  db.addEvent(kind, clip(body?.app, 60), clip(body?.detail, 200), when);
+  for (const h of eventHooks) { try { h(kind, clip(body?.app, 60), clip(body?.detail, 200), when); } catch (err) { console.error("event hook:", err); } }
   return null;
 }
 
@@ -61,6 +67,7 @@ const KIND_TEXT: Record<string, (e: db.DeviceEvent) => string> = {
   arrive: (e) => `到达 ${e.app ?? e.detail ?? "某地"}`,
   leave: (e) => `离开 ${e.app ?? e.detail ?? "某地"}`,
   location: () => "位置更新（想知道在哪用 where_am_i）",
+  study_focus_off_early: (e) => `提前关掉了「学习」专注模式（才学了 ${e.detail ?? "?"}）`,
   lock_block: (e) => `想打开 ${e.app ?? "某个 app"}，被应用锁拦下了`,
 };
 

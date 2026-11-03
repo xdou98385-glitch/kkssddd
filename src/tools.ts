@@ -12,7 +12,7 @@ import { mailEnabled, mailList, mailRead } from "./mail.ts";
 import { xBookmarks, xEnabled, xFeed, xSearch, xTweet, xUser } from "./twitter.ts";
 import { calc } from "./shop.ts";
 import { setBudget, wishAdd, wishList, wishUpdate } from "./wishlist.ts";
-import { addRule, listRules, removeRule, unlock } from "./lock.ts";
+import { addRule, listRules, removeRule, studyConfigure, studyEnd, studyStartNow, studyStats, studyStatus, unlock } from "./lock.ts";
 import { taobaoTools } from "./taobao.ts";
 import { cancelScheduled, listScheduledText, schedule } from "./schedule.ts";
 import { musicEnabled, musicNow, musicRecent, musicTop } from "./music.ts";
@@ -449,6 +449,19 @@ const lockTools: Tool[] = [
     run: async (i) => addRule(i),
     label: () => "给 app 加了一道锁",
   },
+  {
+    def: {
+      name: "study_mode_config",
+      description: "设置学习模式：她打开 focus 里的「学习」专注模式时，自动开始一段学习时间，期间 apps 里的 app 都锁着。这段时间由服务器计时，她关掉专注模式也不会提前解开。apps 要和快捷指令里传的 app 名一致。focus_names 是触发的专注模式名字，默认「学习」。",
+      input_schema: { type: "object", properties: { apps: { type: "array", items: { type: "string" } }, minutes: { type: "number", description: "每次锁多久，10 到 360，默认 90" }, focus_names: { type: "array", items: { type: "string" } } }, required: ["apps", "minutes", "focus_names"], additionalProperties: false },
+    },
+    run: async (i) => studyConfigure(i.apps, Number(i.minutes), i.focus_names),
+    label: () => "设置了学习模式",
+  },
+  { def: { name: "study_mode_start", description: "她说「开始学习」时，不等专注模式，直接开始一段学习时间（期间锁 study_mode_config 里设的 app）。", input_schema: { type: "object", properties: { minutes: { type: "number" } }, required: ["minutes"], additionalProperties: false } }, run: async (i) => studyStartNow(Number(i.minutes)), label: () => "开始了学习时间" },
+  { def: { name: "study_mode_end", description: "提前结束进行中的学习时间。你是守门人：她要提前结束，先问清楚为什么，学完了或真有急事再答应。每天最多提前结束 2 次，代码强制。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: async () => studyEnd(), label: () => "提前结束了学习" },
+  { def: { name: "study_mode_status", description: "看学习模式的设置和现在是不是在学习中。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: async () => studyStatus(), label: () => "看了学习模式" },
+  { def: { name: "study_stats", description: "看最近几天的学习记录：几次、共多少分钟、几次提前结束。她问学得怎么样、这周学了多久时用。", input_schema: { type: "object", properties: { days: { type: "number", description: "1 到 30" } }, required: ["days"], additionalProperties: false } }, run: async (i) => studyStats(Number(i.days) || 7), label: () => "看了学习记录" },
   { def: { name: "app_lock_list", description: "看现在有哪些应用锁规则和临时放行。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: async () => listRules(), label: () => "看了应用锁" },
   { def: { name: "app_lock_remove", description: "删掉一条应用锁规则（编号来自 app_lock_list）。只在她明确要删、而且你判断不是一时冲动时用。", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"], additionalProperties: false } }, run: async (i) => removeRule(Number(i.id)), label: () => "删了一条应用锁" },
   {

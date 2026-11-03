@@ -3,7 +3,7 @@
 // 想临时放行要跟 Claude 说，由它判断；每个 app 每天最多放行 3 次、每次最多 30 分钟（上限由代码守着，Claude 说了不算）。
 // 这是靠自觉的软锁：她随时能在快捷指令里关掉自动化，这个事实不会假装不存在。
 import * as db from "./db.ts";
-import { userTz } from "./device.ts";
+import { eventHooks, userTz } from "./device.ts";
 import { fmtLocal, zonedToMs } from "./schedule.ts";
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -89,6 +89,87 @@ export function usedMinutesToday(app: string, now = Date.now()): number {
   return Math.round(total / 60_000);
 }
 
+// ---- 学习模式：「学习」专注模式一打开，就开始一段由服务器计时的学习时间，期间指定的 app 都锁着 ----
+// 计时在服务器这边：她把专注模式关掉，锁不会跟着解开，只有到点或者找 Claude 放行才行。
+interface StudyCfg { apps: string[]; minutes: number; focus: string[] }
+const studyCfg = (): StudyCfg => { try { return { apps: [], minutes: 90, focus: ["学习", "study"], ...JSON.parse(db.getSetting("study_cfg") || "{}") }; } catch { return { apps: [], minutes: 90, focus: ["学习", "study"] }; } };
+interface StudySession { start: number; until: number; end?: number; how?: "expired" | "manual"; offAt?: number } // offAt：她提前关掉专注模式的时间（锁不解开，但学习时长算到这里）
+const readSessions = (): StudySession[] => { try { return JSON.parse(db.getSetting("study_sessions") || "[]"); } catch { return []; } };
+const writeSessions = (s: StudySession[]) => db.setSetting("study_sessions", JSON.stringify(s.slice(-80)));
+const activeSession = (now: number): StudySession | null => { const l = readSessions().at(-1); return l && !l.end && l.until > now ? l : null; };
+
+function closeExpired(now: number): void {
+  const ss = readSessions();
+  const l = ss.at(-1);
+  if (l && !l.end && l.until <= now) { l.end = l.until; l.how = "expired"; writeSessions(ss); }
+}
+export function startStudy(minutes?: number, now = Date.now()): StudySession {
+  closeExpired(now);
+  const cur = activeSession(now);
+  if (cur) return cur; // 已经在学习中，不重复开
+  const m = Math.max(10, Math.min(Math.round(minutes ?? studyCfg().minutes), 360));
+  const s: StudySession = { start: now, until: now + m * 60_000 };
+  writeSessions([...readSessions(), s]);
+  return s;
+}
+// 专注模式事件：打开「学习」→ 开始计时；关掉 → 只记下她提前关了（锁不解开）
+eventHooks.push((kind, _app, detail, at) => {
+  const names = studyCfg().focus.map((x) => x.toLowerCase());
+  const match = !!detail && names.some((n) => detail.toLowerCase().includes(n));
+  if (kind === "focus_on" && match && studyCfg().apps.length) startStudy(undefined, at);
+  if (kind === "focus_off") {
+    const ss = readSessions();
+    const l = ss.at(-1);
+    if (l && !l.end && l.until > at && !l.offAt) { l.offAt = at; writeSessions(ss); db.addEvent("study_focus_off_early", null, `${Math.round((at - l.start) / 60_000)} 分钟`, at); } // 锁不解开，会话照常计时到点；只是学习时长算到她关掉的这一刻
+  }
+});
+
+export function studyConfigure(apps: string[], minutes: number, focus: string[]): string {
+  const a = (apps ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 15);
+  if (!a.length) throw new Error("没写要锁哪些 app");
+  const f = (focus ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 5);
+  const m = Math.max(10, Math.min(Math.round(Number(minutes) || 90), 360));
+  db.setSetting("study_cfg", JSON.stringify({ apps: a, minutes: m, focus: f.length ? f : ["学习", "study"] }));
+  return `学习模式已设置：「${(f.length ? f : ["学习"]).join("」「")}」专注模式一打开，就锁 ${a.join("、")}，锁 ${m} 分钟（到点自动解开，关掉专注模式不会提前解开）。要生效，得有一个「专注模式 → 学习 → 打开时」的自动化，去访问 /api/events?kind=focus_on&detail=学习。`;
+}
+export function studyStartNow(minutes: number): string {
+  if (!studyCfg().apps.length) throw new Error("还没设置要锁哪些 app，先用 study_mode_config");
+  const s = startStudy(minutes);
+  return `学习开始，到 ${fmtLocal(s.until, tzNow())}，期间 ${studyCfg().apps.join("、")} 锁着`;
+}
+export function studyEnd(now = Date.now()): string {
+  const s = activeSession(now);
+  if (!s) return "现在没有进行中的学习";
+  const u = JSON.parse(db.getSetting("study_ends") || "{}");
+  const today = new Date().toISOString().slice(0, 10);
+  const n = u.day === today ? u.n : 0;
+  if (n >= 2) throw new Error("今天已经提前结束过 2 次学习了，不能再提前结束（代码定的上限）");
+  db.setSetting("study_ends", JSON.stringify({ day: today, n: n + 1 }));
+  const ss = readSessions();
+  const l = ss.at(-1)!;
+  l.end = now; l.how = "manual"; writeSessions(ss);
+  return `已提前结束学习（学了 ${Math.round((now - l.start) / 60_000)} 分钟），今天第 ${n + 1}/2 次`;
+}
+export function studyStatus(now = Date.now()): string {
+  closeExpired(now);
+  const c = studyCfg();
+  const s = activeSession(now);
+  return `学习模式：锁 ${c.apps.length ? c.apps.join("、") : "（还没设置）"}，每次 ${c.minutes} 分钟，触发的专注模式：${c.focus.join("、")}。${s ? `现在进行中，到 ${fmtLocal(s.until, tzNow())}。` : "现在没在学习。"}`;
+}
+export function studyStats(days: number, now = Date.now()): string {
+  closeExpired(now);
+  const d = Math.max(1, Math.min(Math.round(days) || 7, 30));
+  const since = now - d * 86400_000;
+  const ss = readSessions().filter((s) => s.start >= since);
+  if (!ss.length) return `最近 ${d} 天没有学习记录`;
+  const mins = (s: StudySession) => Math.round((Math.min(s.offAt ?? Infinity, s.end ?? Math.min(now, s.until)) - s.start) / 60_000);
+  const byDay = new Map<string, number>();
+  for (const s of ss) { const k = new Intl.DateTimeFormat("zh-CN", { timeZone: tzNow(), month: "numeric", day: "numeric" }).format(s.start); byDay.set(k, (byDay.get(k) ?? 0) + mins(s)); }
+  const early = ss.filter((s) => s.how === "manual").length;
+  const focusOff = db.eventsSince(since, 500).filter((e) => e.kind === "study_focus_off_early").length;
+  return [`最近 ${d} 天：${ss.length} 次学习，共 ${ss.reduce((t, s) => t + mins(s), 0)} 分钟；其中 ${early} 次申请提前结束，${focusOff} 次提前关掉了专注模式（锁没有解开）。`, ...[...byDay].map(([k, v]) => `- ${k}：${v} 分钟`), "（学习时长按「学习时间开始到结束/到点」算，只是约数，不等于真的在学。）"].join("\n");
+}
+
 // 放行时不带 block 这个键（只回 {"allow":1}）：快捷指令里「取到的值」没有类型，If 只能选「有值/没值」，所以「有 block = 被拦」最好用
 export type GateResult = { allow: 1 } | { block: 1; message: string; rule: number }
 
@@ -99,6 +180,12 @@ export function gate(app: string, now = Date.now()): GateResult {
   if (!key) return { allow: 1 };
   const u = readUnlocks()[key];
   if (u && u.until > now) return { allow: 1 };
+  closeExpired(now);
+  const study = activeSession(now);
+  if (study && studyCfg().apps.some((a) => norm(a) === key)) {
+    db.addEvent("lock_block", app, "学习中", now);
+    return { block: 1, rule: 0, message: `学习中，${app} 先锁着，到 ${fmtLocal(study.until, tzNow())}。真有事就去聊天里跟 Claude 说。` };
+  }
   const tz = tzNow();
   const mins = localMinutes(now, tz);
   for (const r of db.listAppRules()) {
