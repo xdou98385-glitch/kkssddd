@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import * as db from "./db.ts";
 import { summarize } from "./claude.ts";
 import { readImage } from "./uploads.ts";
-import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, SHARE_GUIDE, WEREAD_GUIDE, XHS_GUIDE, DOUYIN_GUIDE, MUSIC_GUIDE, WEATHER_GUIDE, CALENDAR_GUIDE, MAIL_GUIDE, X_GUIDE, SCHEDULE_GUIDE, WEBSEARCH_GUIDE, SHOP_GUIDE, TAOBAO_GUIDE, LOCK_GUIDE } from "./persona.ts";
+import { DEFAULT_SYSTEM, DEVICE_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, SHARE_GUIDE, WEREAD_GUIDE, XHS_GUIDE, DOUYIN_GUIDE, MUSIC_GUIDE, WEATHER_GUIDE, CALENDAR_GUIDE, MAIL_GUIDE, X_GUIDE, SCHEDULE_GUIDE, WEBSEARCH_GUIDE, SHOP_GUIDE, TAOBAO_GUIDE, LOCK_GUIDE, EXPENSE_GUIDE } from "./persona.ts";
 import { coreMemoryBlock } from "./tools.ts";
 import { memosEnabled } from "./memos.ts";
 import { wereadEnabled } from "./weread.ts";
@@ -33,6 +33,7 @@ export async function buildSystem(conv: db.Conversation): Promise<string> {
     SCHEDULE_GUIDE,
     SHOP_GUIDE,
     LOCK_GUIDE,
+    EXPENSE_GUIDE,
     taobaoEnabled ? TAOBAO_GUIDE : "",
     webSearchSwitch() ? WEBSEARCH_GUIDE : "",
     memosEnabled ? MEMORY_GUIDE : "",

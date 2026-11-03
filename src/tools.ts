@@ -12,6 +12,8 @@ import { mailEnabled, mailList, mailRead } from "./mail.ts";
 import { xBookmarks, xEnabled, xFeed, xSearch, xTweet, xUser } from "./twitter.ts";
 import { calc } from "./shop.ts";
 import { setBudget, wishAdd, wishList, wishUpdate } from "./wishlist.ts";
+import { budgetSet, expenseAdd, expenseDelete, expenseList, expenseSummary, expenseUpdate, nudgeSet, CATS } from "./expense.ts";
+import { dateAdd, dateList, dateRemove } from "./dates.ts";
 import { addRule, listRules, removeRule, studyConfigure, studyEnd, studyStartNow, studyStats, studyStatus, unlock } from "./lock.ts";
 import { taobaoTools } from "./taobao.ts";
 import { cancelScheduled, listScheduledText, schedule } from "./schedule.ts";
@@ -414,6 +416,40 @@ const calendarTools: Tool[] = [
   },
 ];
 
+// 记账：一句话记、发小票记、晚上问一句
+const expenseTools: Tool[] = [
+  {
+    def: {
+      name: "expense_add",
+      description: `记一笔花销。她说「午饭 780」「地铁 230」就直接记，分类你来判断，不确定就问她一句。金额单位是该币种的元（日元就是日元数）；币种默认 JPY，淘宝等人民币填 CNY。days_ago：记的是几天前的（今天填 0）。分类只能是：${CATS.join("、")}。她发小票或消费截图，读出金额、店名、日期再记，读不清先问。`,
+      input_schema: { type: "object", properties: { amount: { type: "number" }, currency: { type: "string" }, category: { type: "string" }, merchant: { type: "string" }, note: { type: "string" }, days_ago: { type: "number" } }, required: ["amount", "currency", "category", "merchant", "note", "days_ago"], additionalProperties: false },
+    },
+    run: async (i) => expenseAdd(i),
+    label: () => "记了一笔账",
+  },
+  { def: { name: "expense_update", description: "改一笔账（编号来自记下时的返回或 expense_list）：补分类、改金额、改商家、改备注。不改的填 0 或空字符串。", input_schema: { type: "object", properties: { id: { type: "number" }, amount: { type: "number" }, category: { type: "string" }, merchant: { type: "string" }, note: { type: "string" } }, required: ["id", "amount", "category", "merchant", "note"], additionalProperties: false } }, run: async (i) => expenseUpdate(i), label: () => "改了一笔账" },
+  { def: { name: "expense_delete", description: "删掉一笔记错的账。", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"], additionalProperties: false } }, run: async (i) => expenseDelete(Number(i.id)), label: () => "删了一笔账" },
+  { def: { name: "expense_list", description: "列最近几天的明细。", input_schema: { type: "object", properties: { days: { type: "number" } }, required: ["days"], additionalProperties: false } }, run: async (i) => expenseList(Number(i.days) || 7), label: () => "翻了账本" },
+  { def: { name: "expense_summary", description: "汇总：today / week / month，按币种、按分类，有月预算的话对比预算并估月底。她问「花了多少」「钱花哪去了」时用，只说汇总里有的数。", input_schema: { type: "object", properties: { period: { type: "string", enum: ["today", "week", "month"] } }, required: ["period"], additionalProperties: false } }, run: async (i) => expenseSummary(String(i.period)), label: () => "看了花销汇总" },
+  { def: { name: "budget_set", description: "设月预算（该币种的元）。填 0 清除。", input_schema: { type: "object", properties: { amount: { type: "number" }, currency: { type: "string" } }, required: ["amount", "currency"], additionalProperties: false } }, run: async (i) => budgetSet(Number(i.amount), String(i.currency)), label: () => "设了月预算" },
+  { def: { name: "expense_nudge_set", description: "设每晚记账提醒：到点今天还没记过账，就问她一句。time 是她当地时间 HH:MM。", input_schema: { type: "object", properties: { enabled: { type: "boolean" }, time: { type: "string" } }, required: ["enabled", "time"], additionalProperties: false } }, run: async (i) => nudgeSet(!!i.enabled, String(i.time)), label: () => "设了记账提醒" },
+];
+
+// 重要日期簿
+const dateTools: Tool[] = [
+  {
+    def: {
+      name: "date_add",
+      description: "记一个重要日子（在留卡到期、学费缴纳、DDL、生日……），到时提前提醒她。date 是 YYYY-MM-DD；repeat=yearly 每年重复（生日这类，年份写今年的），once 只一次。remind_days 是提前几天提醒，0 表示当天，比如 [7,1,0]。",
+      input_schema: { type: "object", properties: { title: { type: "string" }, date: { type: "string" }, repeat: { type: "string", enum: ["once", "yearly"] }, remind_days: { type: "array", items: { type: "number" } }, note: { type: "string" } }, required: ["title", "date", "repeat", "remind_days", "note"], additionalProperties: false },
+    },
+    run: async (i) => dateAdd(i),
+    label: () => "记下了一个日子",
+  },
+  { def: { name: "date_list", description: "看日期簿：还有几天到、提前几天提醒。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: async () => dateList(), label: () => "看了日期簿" },
+  { def: { name: "date_remove", description: "删掉日期簿里的一条。", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"], additionalProperties: false } }, run: async (i) => dateRemove(Number(i.id)), label: () => "删了一个日子" },
+];
+
 // 购物清单：记住她想买的东西，关了聊天再回来还在
 const wishTools: Tool[] = [
   {
@@ -598,6 +634,8 @@ export const getTools = (): Tool[] => capStrict([
   ...scheduleTools,
   ...shopTools,
   ...wishTools,
+  ...expenseTools,
+  ...dateTools,
   ...lockTools,
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),

@@ -75,6 +75,27 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'want',
     note TEXT NOT NULL DEFAULT ''
   );
+  CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    merchant TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'chat'
+  );
+  CREATE INDEX IF NOT EXISTS idx_expenses_at ON expenses(at);
+  CREATE TABLE IF NOT EXISTS important_dates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    month INTEGER NOT NULL,
+    day INTEGER NOT NULL,
+    year INTEGER NOT NULL DEFAULT 0,
+    repeat TEXT NOT NULL DEFAULT 'once',
+    remind_days TEXT NOT NULL DEFAULT '7,1',
+    note TEXT NOT NULL DEFAULT ''
+  );
   CREATE TABLE IF NOT EXISTS pending_actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at INTEGER NOT NULL,
@@ -331,6 +352,26 @@ export const addAppRule = (r: Omit<AppRule, "id" | "created_at">): number =>
 export const listAppRules = () => db.prepare("SELECT * FROM app_rules ORDER BY id").all() as unknown as AppRule[];
 export const deleteAppRule = (id: number) => Number(db.prepare("DELETE FROM app_rules WHERE id = ?").run(id).changes);
 export const purgeExpiredAppRules = (at: number) => void db.prepare("DELETE FROM app_rules WHERE expires_at > 0 AND expires_at <= ?").run(at);
+
+// ---- 记账 ----
+export interface Expense { id: number; at: number; amount_minor: number; currency: string; category: string; merchant: string; note: string; source: string }
+export const addExpense = (e: Omit<Expense, "id">): number =>
+  Number(db.prepare("INSERT INTO expenses (at, amount_minor, currency, category, merchant, note, source) VALUES (?, ?, ?, ?, ?, ?, ?)").run(e.at, e.amount_minor, e.currency, e.category, e.merchant, e.note, e.source).lastInsertRowid);
+export const expensesBetween = (from: number, to: number) => db.prepare("SELECT * FROM expenses WHERE at >= ? AND at < ? ORDER BY at").all(from, to) as unknown as Expense[];
+export const getExpense = (id: number) => db.prepare("SELECT * FROM expenses WHERE id = ?").get(id) as unknown as Expense | undefined;
+export const deleteExpense = (id: number) => Number(db.prepare("DELETE FROM expenses WHERE id = ?").run(id).changes);
+export function updateExpense(id: number, p: Partial<Pick<Expense, "amount_minor" | "category" | "merchant" | "note">>): void {
+  const c = getExpense(id)!;
+  const n = { ...c, ...p };
+  db.prepare("UPDATE expenses SET amount_minor = ?, category = ?, merchant = ?, note = ? WHERE id = ?").run(n.amount_minor, n.category, n.merchant, n.note, id);
+}
+
+// ---- 重要日期 ----
+export interface ImportantDate { id: number; title: string; month: number; day: number; year: number; repeat: "once" | "yearly"; remind_days: string; note: string }
+export const addImportantDate = (d: Omit<ImportantDate, "id">): number =>
+  Number(db.prepare("INSERT INTO important_dates (title, month, day, year, repeat, remind_days, note) VALUES (?, ?, ?, ?, ?, ?, ?)").run(d.title, d.month, d.day, d.year, d.repeat, d.remind_days, d.note).lastInsertRowid);
+export const listImportantDates = () => db.prepare("SELECT * FROM important_dates ORDER BY month, day, id").all() as unknown as ImportantDate[];
+export const deleteImportantDate = (id: number) => Number(db.prepare("DELETE FROM important_dates WHERE id = ?").run(id).changes);
 
 // ---- 备份：用 SQLite 自己的 VACUUM INTO 拷一份一致的快照 ----
 export function backupTo(file: string): void {

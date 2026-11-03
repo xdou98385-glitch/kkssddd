@@ -31,6 +31,7 @@ import { mailStatus } from "./mail.ts";
 import { xStatus } from "./twitter.ts";
 import { startTaobao, taobaoStatus } from "./taobao.ts";
 import { gate } from "./lock.ts";
+import { walletAdd } from "./expense.ts";
 import { usedToday as searchesToday, webSearchLimit, webSearchSwitch } from "./websearch.ts";
 import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
 import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
@@ -179,6 +180,12 @@ app.get("/api/events", (c) => {
 app.get("/api/gate", (c) => {
   if (!checkRawToken(c.req.query("token"))) return c.json({ error: "unauthorized" }, 401);
   return c.json(gate(c.req.query("app") ?? ""));
+});
+
+// Apple Pay「交易」自动化：刷一次卡就把金额和商家报上来（口令同设备事件）。例：/api/expense?token=口令&amount=¥480&merchant=星巴克
+app.get("/api/expense", (c) => {
+  if (!checkRawToken(c.req.query("token"))) return c.json({ error: "unauthorized" }, 401);
+  try { return c.json({ ok: true, message: walletAdd(c.req.query("amount") ?? "", c.req.query("merchant") ?? "", c.req.query("note") ?? "") }); } catch (err) { return c.json({ error: (err as Error).message }, 400); }
 });
 
 app.get("/api/device/status", (c) => {
