@@ -89,15 +89,16 @@ export function usedMinutesToday(app: string, now = Date.now()): number {
   return Math.round(total / 60_000);
 }
 
-export interface GateResult { block: 0 | 1; message?: string; rule?: number }
+// 放行时不带 block 这个键（只回 {"allow":1}）：快捷指令里「取到的值」没有类型，If 只能选「有值/没值」，所以「有 block = 被拦」最好用
+export type GateResult = { allow: 1 } | { block: 1; message: string; rule: number }
 
 /** 她打开 app 时的判定。只做本地计算，必须快（快捷指令在等） */
 export function gate(app: string, now = Date.now()): GateResult {
   db.purgeExpiredAppRules(now);
   const key = norm(app);
-  if (!key) return { block: 0 };
+  if (!key) return { allow: 1 };
   const u = readUnlocks()[key];
-  if (u && u.until > now) return { block: 0 };
+  if (u && u.until > now) return { allow: 1 };
   const tz = tzNow();
   const mins = localMinutes(now, tz);
   for (const r of db.listAppRules()) {
@@ -115,5 +116,5 @@ export function gate(app: string, now = Date.now()): GateResult {
       return { block: 1, rule: r.id, message: `${hit}${r.note ? " " + r.note + "。" : ""}真有事就去聊天里跟 Claude 说。` };
     }
   }
-  return { block: 0 };
+  return { allow: 1 };
 }
