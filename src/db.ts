@@ -51,6 +51,17 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'pending'
   );
   CREATE INDEX IF NOT EXISTS idx_scheduled_due ON scheduled(status, due_at);
+  CREATE TABLE IF NOT EXISTS app_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    app TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    start TEXT NOT NULL DEFAULT '',
+    end TEXT NOT NULL DEFAULT '',
+    limit_min INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER NOT NULL DEFAULT 0,
+    note TEXT NOT NULL DEFAULT ''
+  );
   CREATE TABLE IF NOT EXISTS pending_actions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at INTEGER NOT NULL,
@@ -286,6 +297,14 @@ export const dueScheduled = (at: number, limit = 3) => db.prepare("SELECT * FROM
 export const getScheduled = (id: number) => db.prepare("SELECT * FROM scheduled WHERE id = ?").get(id) as Scheduled | undefined;
 export const setScheduledStatus = (id: number, status: string) => void db.prepare("UPDATE scheduled SET status = ? WHERE id = ?").run(status, id);
 export const postponeScheduled = (id: number, dueAt: number) => void db.prepare("UPDATE scheduled SET due_at = ? WHERE id = ?").run(dueAt, id);
+
+// ---- 应用锁规则 ----
+export interface AppRule { id: number; created_at: number; app: string; kind: "window" | "limit"; start: string; end: string; limit_min: number; expires_at: number; note: string }
+export const addAppRule = (r: Omit<AppRule, "id" | "created_at">): number =>
+  Number(db.prepare("INSERT INTO app_rules (created_at, app, kind, start, end, limit_min, expires_at, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(now(), r.app, r.kind, r.start, r.end, r.limit_min, r.expires_at, r.note).lastInsertRowid);
+export const listAppRules = () => db.prepare("SELECT * FROM app_rules ORDER BY id").all() as unknown as AppRule[];
+export const deleteAppRule = (id: number) => Number(db.prepare("DELETE FROM app_rules WHERE id = ?").run(id).changes);
+export const purgeExpiredAppRules = (at: number) => void db.prepare("DELETE FROM app_rules WHERE expires_at > 0 AND expires_at <= ?").run(at);
 
 // ---- 备份：用 SQLite 自己的 VACUUM INTO 拷一份一致的快照 ----
 export function backupTo(file: string): void {

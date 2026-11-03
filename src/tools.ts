@@ -11,6 +11,7 @@ import { calendarEnabled, calendarUpcoming } from "./calendar.ts";
 import { mailEnabled, mailList, mailRead } from "./mail.ts";
 import { xBookmarks, xEnabled, xFeed, xSearch, xTweet, xUser } from "./twitter.ts";
 import { calc } from "./shop.ts";
+import { addRule, listRules, removeRule, unlock } from "./lock.ts";
 import { taobaoTools } from "./taobao.ts";
 import { cancelScheduled, listScheduledText, schedule } from "./schedule.ts";
 import { musicEnabled, musicNow, musicRecent, musicTop } from "./music.ts";
@@ -412,6 +413,26 @@ const calendarTools: Tool[] = [
   },
 ];
 
+// 应用锁：她让你帮她管手机时间。一直可用
+const lockTools: Tool[] = [
+  {
+    def: {
+      name: "app_lock_set",
+      description: "给某个 app 加一条锁。kind=window：start~end 时间段不让开（HH:MM，可跨午夜，如 23:00~07:00）；kind=limit：每天最多用 limit_minutes 分钟。until 是这条规则的失效时间（她当地时间 YYYY-MM-DD HH:MM，比如「学习到 22:00」），长期有效就留空。app 要和快捷指令里传的名字一致（她叫它抖音就写抖音）。不用的参数填空字符串或 0。",
+      input_schema: { type: "object", properties: { app: { type: "string" }, kind: { type: "string", enum: ["window", "limit"] }, start: { type: "string" }, end: { type: "string" }, limit_minutes: { type: "number" }, until: { type: "string" }, note: { type: "string", description: "拦她时一起显示的一句话，比如「说好今晚学日语的」" } }, required: ["app", "kind", "start", "end", "limit_minutes", "until", "note"], additionalProperties: false },
+    },
+    run: async (i) => addRule(i),
+    label: () => "给 app 加了一道锁",
+  },
+  { def: { name: "app_lock_list", description: "看现在有哪些应用锁规则和临时放行。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: async () => listRules(), label: () => "看了应用锁" },
+  { def: { name: "app_lock_remove", description: "删掉一条应用锁规则（编号来自 app_lock_list）。只在她明确要删、而且你判断不是一时冲动时用。", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"], additionalProperties: false } }, run: async (i) => removeRule(Number(i.id)), label: () => "删了一条应用锁" },
+  {
+    def: { name: "app_lock_unlock", description: "临时放行某个 app（最多 30 分钟，每个 app 每天最多 3 次，代码强制）。她来求你放行时，你来当守门人：问清楚为什么、够不够正当，再决定放不放。", input_schema: { type: "object", properties: { app: { type: "string" }, minutes: { type: "number" } }, required: ["app", "minutes"], additionalProperties: false } },
+    run: async (i) => unlock(String(i.app ?? ""), Number(i.minutes)),
+    label: () => "临时放行了一个 app",
+  },
+];
+
 // 购物算数：不连任何平台，只做加减乘除
 const shopTools: Tool[] = [
   {
@@ -538,6 +559,7 @@ export const getTools = (): Tool[] => capStrict([
   clockTool,
   ...scheduleTools,
   ...shopTools,
+  ...lockTools,
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),
   ...(wereadEnabled ? [wereadTool] : []),

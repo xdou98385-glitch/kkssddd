@@ -61,6 +61,7 @@ const KIND_TEXT: Record<string, (e: db.DeviceEvent) => string> = {
   arrive: (e) => `到达 ${e.app ?? e.detail ?? "某地"}`,
   leave: (e) => `离开 ${e.app ?? e.detail ?? "某地"}`,
   location: () => "位置更新（想知道在哪用 where_am_i）",
+  lock_block: (e) => `想打开 ${e.app ?? "某个 app"}，被应用锁拦下了`,
 };
 
 function fmtTime(ms: number, tz: string): string {

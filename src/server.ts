@@ -30,6 +30,7 @@ import { calendarStatus } from "./calendar.ts";
 import { mailStatus } from "./mail.ts";
 import { xStatus } from "./twitter.ts";
 import { startTaobao, taobaoStatus } from "./taobao.ts";
+import { gate } from "./lock.ts";
 import { usedToday as searchesToday, webSearchLimit, webSearchSwitch } from "./websearch.ts";
 import { ConfigError, GROUPS, canReveal, cfg, describeGroups, notifyConfigChanged, setCfg } from "./config.ts";
 import { TtsError, elevenQuota, podcastVoice, speechText, synthesize, synthesizeLong, ttsEnabled, voiceStatus } from "./tts.ts";
@@ -172,6 +173,12 @@ app.get("/api/events", (c) => {
   if (!checkRawToken(c.req.query("token"))) return c.json({ error: "unauthorized" }, 401);
   const err = recordEvent({ kind: c.req.query("kind"), app: c.req.query("app"), detail: c.req.query("detail") });
   return err ? c.json({ error: err }, 400) : c.json({ ok: true });
+});
+
+// 应用锁：快捷指令「打开 App」时来问一声。口令同设备事件；回 {"block":1,"message":"…"} 或 {"block":0}
+app.get("/api/gate", (c) => {
+  if (!checkRawToken(c.req.query("token"))) return c.json({ error: "unauthorized" }, 401);
+  return c.json(gate(c.req.query("app") ?? ""));
 });
 
 app.get("/api/device/status", (c) => {
