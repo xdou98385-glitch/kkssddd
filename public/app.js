@@ -1401,3 +1401,13 @@ async function loadPending() {
   }));
 }
 loadPending();
+
+// ---- 从应用锁快捷指令跳过来：/?lock=抖音 → 输入框预填一句话，让她当场跟 Claude 说理由 ----
+(() => {
+  const app = new URLSearchParams(location.search).get("lock");
+  if (!app) return;
+  history.replaceState(null, "", location.pathname + location.hash); // 刷新时别再预填一遍
+  els.input.value = `我刚想打开${app.slice(0, 20)}，被锁拦下了。我想开是因为：`;
+  autosize();
+  els.input.focus();
+})();
