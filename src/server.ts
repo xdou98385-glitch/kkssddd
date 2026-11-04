@@ -188,6 +188,15 @@ app.get("/api/expense", (c) => {
   try { return c.json({ ok: true, message: walletAdd(c.req.query("amount") ?? "", c.req.query("merchant") ?? "", c.req.query("note") ?? "") }); } catch (err) { return c.json({ error: (err as Error).message }, 400); }
 });
 
+// 同一个接收口的 POST 版：快捷指令里用「获取 URL 内容」→ 方法 POST → 请求正文选 JSON，填 amount / merchant 两个字段，不用担心商家名里的日文和空格要不要编码
+app.post("/api/expense", async (c) => {
+  if (!checkDeviceToken(c.req.header("authorization")) && !checkRawToken(c.req.query("token"))) return c.json({ error: "unauthorized" }, 401);
+  let b: Record<string, unknown> = {};
+  const ct = c.req.header("content-type") ?? "";
+  try { b = ct.includes("json") ? await c.req.json() : Object.fromEntries(Object.entries(await c.req.parseBody()).map(([k, v]) => [k, String(v)])); } catch { /* 空正文就当没有 */ }
+  try { return c.json({ ok: true, message: walletAdd(String(b.amount ?? c.req.query("amount") ?? ""), String(b.merchant ?? c.req.query("merchant") ?? ""), String(b.note ?? "")) }); } catch (err) { return c.json({ error: (err as Error).message }, 400); }
+});
+
 app.get("/api/device/status", (c) => {
   const last = db.latestEvent();
   return c.json({ enabled: deviceEnabled, last: last ?? null });
