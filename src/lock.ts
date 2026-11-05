@@ -4,6 +4,7 @@
 // 这是靠自觉的软锁：她随时能在快捷指令里关掉自动化，这个事实不会假装不存在。
 import * as db from "./db.ts";
 import { eventHooks, userTz } from "./device.ts";
+import { sendPush } from "./push.ts";
 import { fmtLocal, zonedToMs } from "./schedule.ts";
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -173,6 +174,15 @@ export function studyStats(days: number, now = Date.now()): string {
 // 放行时不带 block 这个键（只回 {"allow":1}）：快捷指令里「取到的值」没有类型，If 只能选「有值/没值」，所以「有 block = 被拦」最好用
 export type GateResult = { allow: 1 } | { block: 1; message: string; rule: number }
 
+/** 被拦时给手机发一条通知：点它会打开主屏幕上的聊天网页 App（不是 Safari），并预填「我想开……因为」。同一个 app 两分钟内只发一次 */
+function notifyBlocked(app: string, now: number): void {
+  const k = "lock_push_" + norm(app);
+  if (now - (Number(db.getSetting(k, "0")) || 0) < 120_000) return;
+  db.setSetting(k, String(now));
+  if (!db.listPushSubs().length) return;
+  void sendPush({ title: "应用锁", body: `${app} 被锁着。真有事，点这里跟我说。`, url: `/?lock=${encodeURIComponent(app)}`, tag: "claude-lock" }).catch(() => {});
+}
+
 /** 她打开 app 时的判定。只做本地计算，必须快（快捷指令在等） */
 export function gate(app: string, now = Date.now()): GateResult {
   db.purgeExpiredAppRules(now);
@@ -184,6 +194,7 @@ export function gate(app: string, now = Date.now()): GateResult {
   const study = activeSession(now);
   if (study && studyCfg().apps.some((a) => norm(a) === key)) {
     db.addEvent("lock_block", app, "学习中", now);
+    notifyBlocked(app, now);
     return { block: 1, rule: 0, message: `学习中，${app} 先锁着，到 ${fmtLocal(study.until, tzNow())}。真有事就去聊天里跟 Claude 说。` };
   }
   const tz = tzNow();
@@ -200,6 +211,7 @@ export function gate(app: string, now = Date.now()): GateResult {
     }
     if (hit) {
       db.addEvent("lock_block", r.app, `#${r.id}`, now);
+      notifyBlocked(r.app, now);
       return { block: 1, rule: r.id, message: `${hit}${r.note ? " " + r.note + "。" : ""}真有事就去聊天里跟 Claude 说。` };
     }
   }

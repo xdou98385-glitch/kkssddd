@@ -10,7 +10,7 @@ self.addEventListener("push", (event) => {
       body: d.body || "",
       icon: "/icon-192.png",
       badge: "/icon-192.png",
-      tag: "claude-message", // 同一个 tag 的新通知会替换旧的，不会堆一排
+      tag: d.tag || "claude-message", // 同一个 tag 的新通知会替换旧的，不会堆一排
       renotify: true,
       data: { url: d.url || "/" },
     }),
@@ -21,11 +21,16 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   event.waitUntil(
     (async () => {
+      const url = event.notification.data?.url || "/";
       const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const w of wins) {
-        if ("focus" in w) { await w.focus(); return; }
+        if ("focus" in w) {
+          await w.focus();
+          w.postMessage({ type: "open", url }); // 应用已经开着：不重新加载，让页面自己处理（比如应用锁来的预填）
+          return;
+        }
       }
-      await self.clients.openWindow(event.notification.data?.url || "/");
+      await self.clients.openWindow(url);
     })(),
   );
 });

@@ -1422,11 +1422,21 @@ async function loadPending() {
 loadPending();
 
 // ---- 从应用锁快捷指令跳过来：/?lock=抖音 → 输入框预填一句话，让她当场跟 Claude 说理由 ----
+function prefillLock(app) {
+  if (!app) return;
+  els.input.value = `我刚想打开${app.slice(0, 20)}，被锁拦下了。我想开是因为：`;
+  setPage("chat");
+  autosize();
+  els.input.focus();
+}
 (() => {
   const app = new URLSearchParams(location.search).get("lock");
   if (!app) return;
   history.replaceState(null, "", location.pathname + location.hash); // 刷新时别再预填一遍
-  els.input.value = `我刚想打开${app.slice(0, 20)}，被锁拦下了。我想开是因为：`;
-  autosize();
-  els.input.focus();
+  prefillLock(app);
 })();
+// 应用已经开着、从「应用锁」通知点进来：service worker 把链接发过来，不重新加载页面
+navigator.serviceWorker?.addEventListener("message", (e) => {
+  if (e.data?.type !== "open") return;
+  try { prefillLock(new URL(e.data.url, location.origin).searchParams.get("lock")); } catch { /* 链接不对就忽略 */ }
+});
