@@ -68,6 +68,7 @@ const KIND_TEXT: Record<string, (e: db.DeviceEvent) => string> = {
   leave: (e) => `离开 ${e.app ?? e.detail ?? "某地"}`,
   location: () => "位置更新（想知道在哪用 where_am_i）",
   study_focus_off_early: (e) => `提前关掉了「学习」专注模式（才学了 ${e.detail ?? "?"}）`,
+  lock_self: (e) => `Claude 自己给 ${e.app ?? "某个 app"} 上了锁（${e.detail ?? ""}）`,
   lock_block: (e) => `想打开 ${e.app ?? "某个 app"}，被应用锁拦下了`,
 };
 

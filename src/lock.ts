@@ -42,12 +42,43 @@ export function addRule(a: { app: string; kind: string; start: string; end: stri
   return `已锁 #${id}：${app}，${a.kind === "window" ? `${start}–${end} 不让开` : `每天最多 ${limit} 分钟`}${expires ? `，到 ${fmtLocal(expires, tzNow())} 失效` : ""}。要让这条生效，快捷指令里得有「打开 ${app}」的自动化去问服务器。`;
 }
 
+// ---- Claude 自己决定上锁（只对她事先点名的 app/分组，时长和次数由代码封顶）----
+interface AutoCfg { apps: string[]; maxMinutes: number }
+const autoCfg = (): AutoCfg => { try { return { apps: [], maxMinutes: 180, ...JSON.parse(db.getSetting("lock_auto") || "{}") }; } catch { return { apps: [], maxMinutes: 180 }; } };
+const AUTO_PER_DAY = 4;
+
+export function autoConfigure(apps: string[], maxMinutes: number): string {
+  const a = (apps ?? []).map((x) => String(x).trim()).filter(Boolean).slice(0, 20);
+  const m = Math.max(15, Math.min(Math.round(Number(maxMinutes) || 180), 240));
+  db.setSetting("lock_auto", JSON.stringify({ apps: a, maxMinutes: m }));
+  return a.length ? `已设置：Claude 可以自己给 ${a.join("、")} 上锁，每次最长 ${m} 分钟，每天最多 ${AUTO_PER_DAY} 次，上锁时必须告诉你原因。` : "已关闭：Claude 不会自己上锁了（你让它设的锁不受影响）";
+}
+
+/** Claude 主动上锁：只能锁她点过名的 app，最长 maxMinutes，每天最多 4 次。用「到点失效」的规则实现 */
+export function lockSelf(app: string, minutes: number, reason: string): string {
+  const cfg = autoCfg();
+  const name = String(app ?? "").trim();
+  if (!cfg.apps.some((a) => norm(a) === norm(name))) throw new Error(`「${name}」不在她允许你自己上锁的名单里（名单：${cfg.apps.join("、") || "空"}）。想锁就先问她，她同意了再用 app_lock_set`);
+  const u = (() => { try { return JSON.parse(db.getSetting("lock_auto_used") || "{}"); } catch { return {}; } })();
+  const today = new Date().toISOString().slice(0, 10);
+  const n = u.day === today ? Number(u.n) || 0 : 0;
+  if (n >= AUTO_PER_DAY) throw new Error(`今天已经自己上过 ${AUTO_PER_DAY} 次锁了，不能再自己上（代码定的上限）`);
+  const why = String(reason ?? "").trim().slice(0, 80);
+  if (!why) throw new Error("要写上锁的原因，她会看到");
+  const m = Math.max(10, Math.min(Math.round(Number(minutes) || 60), cfg.maxMinutes));
+  const until = Date.now() + m * 60_000;
+  db.setSetting("lock_auto_used", JSON.stringify({ day: today, n: n + 1 }));
+  db.addAppRule({ app: name, kind: "until", start: "", end: "", limit_min: 0, expires_at: until, note: `Claude 锁的：${why}` });
+  db.addEvent("lock_self", name, `${m} 分钟：${why}`);
+  return `已锁 ${name} ${m} 分钟，到 ${fmtLocal(until, tzNow())}（今天第 ${n + 1}/${AUTO_PER_DAY} 次）。现在必须在回复里告诉她：锁了什么、锁多久、为什么。`;
+}
+
 export function listRules(): string {
   db.purgeExpiredAppRules(Date.now());
   const rs = db.listAppRules();
   if (!rs.length) return "现在没有任何应用锁规则";
   const unlocks = readUnlocks();
-  return rs.map((r) => `- #${r.id} ${r.app}：${r.kind === "window" ? `${r.start}–${r.end} 不让开` : `每天最多 ${r.limit_min} 分钟`}${r.expires_at ? `，到 ${fmtLocal(r.expires_at, tzNow())} 失效` : ""}${r.note ? `（${r.note}）` : ""}${unlocks[norm(r.app)]?.until > Date.now() ? `【临时放行到 ${fmtLocal(unlocks[norm(r.app)].until, tzNow())}】` : ""}`).join("\n");
+  return rs.map((r) => `- #${r.id} ${r.app}：${r.kind === "window" ? `${r.start}–${r.end} 不让开` : r.kind === "until" ? "一直锁着" : `每天最多 ${r.limit_min} 分钟`}${r.expires_at ? `，到 ${fmtLocal(r.expires_at, tzNow())} 失效` : ""}${r.note ? `（${r.note}）` : ""}${unlocks[norm(r.app)]?.until > Date.now() ? `【临时放行到 ${fmtLocal(unlocks[norm(r.app)].until, tzNow())}】` : ""}`).join("\n");
 }
 
 export function removeRule(id: number): string {
@@ -202,7 +233,9 @@ export function gate(app: string, now = Date.now()): GateResult {
   for (const r of db.listAppRules()) {
     if (norm(r.app) !== key) continue;
     let hit = "";
-    if (r.kind === "window") {
+    if (r.kind === "until") {
+      hit = `${r.app} 被锁到 ${fmtLocal(r.expires_at, tzNow())}。`;
+    } else if (r.kind === "window") {
       const a = toMin(r.start), b = toMin(r.end);
       if (a < b ? mins >= a && mins < b : mins >= a || mins < b) hit = `现在是 ${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}，${r.app} 在 ${r.start}–${r.end} 被锁着。`;
     } else {

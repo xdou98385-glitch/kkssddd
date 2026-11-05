@@ -14,7 +14,7 @@ import { calc } from "./shop.ts";
 import { setBudget, wishAdd, wishList, wishUpdate } from "./wishlist.ts";
 import { budgetSet, expenseAdd, expenseDelete, expenseList, expenseSummary, expenseUpdate, nudgeSet, CATS } from "./expense.ts";
 import { dateAdd, dateList, dateRemove } from "./dates.ts";
-import { addRule, listRules, removeRule, studyConfigure, studyEnd, studyStartNow, studyStats, studyStatus, unlock } from "./lock.ts";
+import { addRule, autoConfigure, lockSelf, listRules, removeRule, studyConfigure, studyEnd, studyStartNow, studyStats, studyStatus, unlock } from "./lock.ts";
 import { taobaoTools } from "./taobao.ts";
 import { cancelScheduled, listScheduledText, schedule } from "./schedule.ts";
 import { musicEnabled, musicNow, musicRecent, musicTop } from "./music.ts";
@@ -498,6 +498,24 @@ const lockTools: Tool[] = [
   { def: { name: "study_mode_end", description: "提前结束进行中的学习时间。你是守门人：她要提前结束，先问清楚为什么，学完了或真有急事再答应。每天最多提前结束 2 次，代码强制。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: async () => studyEnd(), label: () => "提前结束了学习" },
   { def: { name: "study_mode_status", description: "看学习模式的设置和现在是不是在学习中。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: async () => studyStatus(), label: () => "看了学习模式" },
   { def: { name: "study_stats", description: "看最近几天的学习记录：几次、共多少分钟、几次提前结束。她问学得怎么样、这周学了多久时用。", input_schema: { type: "object", properties: { days: { type: "number", description: "1 到 30" } }, required: ["days"], additionalProperties: false } }, run: async (i) => studyStats(Number(i.days) || 7), label: () => "看了学习记录" },
+  {
+    def: {
+      name: "app_lock_auto_config",
+      description: "设置哪些 app 或分组允许你自己决定上锁（她明确同意之后才设）。apps 里的名字要和快捷指令里传的一致（分组名也行，比如「娱乐」）。max_minutes 是每次最长锁多久。apps 传空数组 = 关闭你自己上锁的权限。",
+      input_schema: { type: "object", properties: { apps: { type: "array", items: { type: "string" } }, max_minutes: { type: "number", description: "15 到 240，默认 180" } }, required: ["apps", "max_minutes"], additionalProperties: false },
+    },
+    run: async (i) => autoConfigure(i.apps, Number(i.max_minutes)),
+    label: () => "设置了自己能锁哪些 app",
+  },
+  {
+    def: {
+      name: "app_lock_self",
+      description: "你自己决定给某个 app/分组上锁一段时间（只能是她允许你自己锁的名单里的，每次有时长上限，每天最多 4 次）。用在：她深夜还在刷、说好要学习却一直在玩、她自己说想管住自己的时候。锁完必须在回复里告诉她锁了什么、多久、为什么。她来求放行时，你照常当守门人。",
+      input_schema: { type: "object", properties: { app: { type: "string" }, minutes: { type: "number" }, reason: { type: "string", description: "为什么锁，她会看到" } }, required: ["app", "minutes", "reason"], additionalProperties: false },
+    },
+    run: async (i) => lockSelf(String(i.app ?? ""), Number(i.minutes), String(i.reason ?? "")),
+    label: () => "自己给 app 上了锁",
+  },
   { def: { name: "app_lock_list", description: "看现在有哪些应用锁规则和临时放行。", input_schema: { type: "object", properties: {}, additionalProperties: false } }, run: async () => listRules(), label: () => "看了应用锁" },
   { def: { name: "app_lock_remove", description: "删掉一条应用锁规则（编号来自 app_lock_list）。只在她明确要删、而且你判断不是一时冲动时用。", input_schema: { type: "object", properties: { id: { type: "number" } }, required: ["id"], additionalProperties: false } }, run: async (i) => removeRule(Number(i.id)), label: () => "删了一条应用锁" },
   {

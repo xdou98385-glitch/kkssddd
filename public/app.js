@@ -119,6 +119,8 @@ const TOOL_LABELS = {
   study_mode_end: "提前结束了学习",
   study_mode_status: "看了学习模式",
   study_stats: "看了学习记录",
+  app_lock_auto_config: "设置了自己能锁哪些 app",
+  app_lock_self: "自己给 app 上了锁",
   app_lock_set: "给 app 加了一道锁",
   app_lock_list: "看了应用锁",
   app_lock_remove: "删了一条应用锁",

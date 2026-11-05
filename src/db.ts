@@ -346,7 +346,7 @@ export function updateWish(id: number, patch: Partial<Omit<Wish, "id" | "created
 export const countWishes = () => Number((db.prepare("SELECT COUNT(*) AS n FROM wishlist WHERE status != 'dropped'").get() as { n: number }).n);
 
 // ---- 应用锁规则 ----
-export interface AppRule { id: number; created_at: number; app: string; kind: "window" | "limit"; start: string; end: string; limit_min: number; expires_at: number; note: string }
+export interface AppRule { id: number; created_at: number; app: string; kind: "window" | "limit" | "until"; start: string; end: string; limit_min: number; expires_at: number; note: string }
 export const addAppRule = (r: Omit<AppRule, "id" | "created_at">): number =>
   Number(db.prepare("INSERT INTO app_rules (created_at, app, kind, start, end, limit_min, expires_at, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(now(), r.app, r.kind, r.start, r.end, r.limit_min, r.expires_at, r.note).lastInsertRowid);
 export const listAppRules = () => db.prepare("SELECT * FROM app_rules ORDER BY id").all() as unknown as AppRule[];
