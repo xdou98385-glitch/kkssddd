@@ -17,9 +17,7 @@
 <body>
   <main>
     <header>
-      <button id="game-btn" class="round" type="button" aria-label="数独" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9.33 4v16M14.67 4v16M4 9.33h16M4 14.67h16"/></svg>
-      </button>
+      <span class="spacer"></span>
       <h1 id="title">Claude</h1>
       <button id="settings-btn" class="round" type="button" aria-label="设置">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
@@ -41,8 +39,37 @@
       </div>
       <div id="board" role="grid"></div>
       <div id="pad"></div>
+      <div id="game-say" class="say"></div>
     </section>
 
+    <section id="radio" hidden aria-label="电台">
+      <div class="deck" id="deck">
+        <div class="deck-line"><span id="deck-title">—</span><span id="deck-time">--:--</span></div>
+        <div class="deck-bar" id="deck-bar" aria-hidden="true"></div>
+      </div>
+      <div class="radio-make">
+        <input id="pod-topic" type="text" maxlength="100" placeholder="想听什么（可空）">
+        <button id="pod-run" type="button">来一期</button>
+      </div>
+      <p id="pod-status" class="memory-status"></p>
+      <p id="pod-quota" class="memory-status"></p>
+      <ol id="episodes"></ol>
+    </section>
+
+    <section id="call" hidden aria-label="通话">
+      <div class="call-top"><span id="call-state">STANDBY</span><span id="call-time">00:00</span></div>
+      <button id="call-moon" class="call-moon" type="button" aria-label="月亮">
+        <img src="/hero.png" alt="" draggable="false">
+      </button>
+      <p id="call-subs" class="call-subs" hidden></p>
+      <div class="call-actions">
+        <button id="call-go" type="button" class="call-go">接通</button>
+        <button id="call-sub-toggle" type="button" class="call-link">字幕：关</button>
+      </div>
+      <p id="call-note" class="memory-status"></p>
+    </section>
+
+    <div id="pending"></div>
     <div id="attachments"></div>
     <form id="composer">
       <button id="attach" class="round flat" type="button" aria-label="发图片">
@@ -55,41 +82,91 @@
         <svg class="i-stop" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
       </button>
     </form>
+
+    <nav id="tabs" aria-label="页面">
+      <button type="button" data-page="chat" aria-current="true">对话</button>
+      <button type="button" data-page="radio" id="tab-radio" hidden>电台</button>
+      <button type="button" data-page="call" id="tab-call" hidden>通话</button>
+      <button type="button" data-page="board">棋盘</button>
+    </nav>
   </main>
 
-  <dialog id="settings">
+  <dialog id="settings" data-tab="chat">
     <form method="dialog">
       <h2>设置</h2>
-      <label class="field"><span>模型</span>
-        <select id="model"></select>
-      </label>
-      <label class="field"><span>系统提示词</span>
-        <textarea id="system-prompt" rows="9"></textarea>
-        <small>每次对话都会带上，决定它怎么说话、怎么称呼你。</small>
-      </label>
-      <fieldset class="group">
-        <legend>主动消息</legend>
-        <label class="switch"><input type="checkbox" id="pro-on"><span>允许它主动找我（发消息并推送到手机）</span></label>
-        <div class="row3">
-          <label class="field"><span>安静时段从</span><input type="time" id="pro-qs" value="23:00"></label>
-          <label class="field"><span>到</span><input type="time" id="pro-qe" value="09:00"></label>
-          <label class="field"><span>每天最多</span>
-            <select id="pro-max"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option><option>6</option></select>
+      <div id="set-tabs" role="tablist">
+        <button type="button" data-tab="chat" aria-current="true">对话</button>
+        <button type="button" data-tab="conn">连接</button>
+        <button type="button" data-tab="notify">通知</button>
+        <button type="button" data-tab="more">其他</button>
+      </div>
+      <div class="set-body">
+        <div class="set-panel" data-panel="chat">
+          <label class="field"><span>模型</span>
+            <select id="model"></select>
+          </label>
+          <label class="field"><span>系统提示词</span>
+            <textarea id="system-prompt" rows="9"></textarea>
+            <small>每次对话都会带上，决定它怎么说话、怎么称呼你。</small>
+          </label>
+          <label class="field"><span>记忆窗口</span>
+            <select id="window-preset">
+              <option value="tight">紧凑：最省额度</option>
+              <option value="balanced">均衡（推荐）</option>
+              <option value="wide">宽松：多记原话</option>
+              <option value="long">很长：最费额度</option>
+            </select>
+            <small>聊太长时，旧内容会自动压成摘要带到下一段，等于无缝换窗。窗口越小越省，原话记得越少，重要的事靠摘要和记忆。</small>
           </label>
         </div>
-        <div class="push-actions">
-          <button id="push-enable" type="button">开启本机通知</button>
-          <button id="push-test" type="button">测试通知</button>
-          <button id="pro-run" type="button">现在试一条</button>
+        <div class="set-panel" data-panel="conn">
+          <p class="memory-status">点开一项填写。每一项各自「保存并测试」，不用点底部的「保存」。</p>
+          <div id="conn-list"></div>
+          <p class="memory-status">密钥填进去以后只会显示「已设置」，不会再发回这个页面。ANTHROPIC_API_KEY 和登录密码仍然在服务器的 .env 里，填错会把你锁在外面，所以没放在这里。</p>
         </div>
-        <p id="push-status" class="memory-status"></p>
-      </fieldset>
-      <p id="memory-status" class="memory-status"></p>
-      <p id="weread-status" class="memory-status"></p>
-      <p id="device-status" class="memory-status"></p>
-      <div class="danger-zone">
-        <button id="reset" type="button">清空聊天重新开始</button>
-        <button id="logout" type="button" hidden>退出登录</button>
+        <div class="set-panel" data-panel="notify">
+          <fieldset class="group">
+            <label class="switch"><input type="checkbox" id="pro-on"><span>允许它主动找我（发消息并推送到手机）</span></label>
+            <div class="row3">
+              <label class="field"><span>安静时段从</span><input type="time" id="pro-qs" value="23:00"></label>
+              <label class="field"><span>到</span><input type="time" id="pro-qe" value="09:00"></label>
+              <label class="field"><span>每天最多</span>
+                <select id="pro-max"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="0">不限</option></select>
+              </label>
+            </div>
+            <div class="push-actions">
+              <button id="push-enable" type="button">开启本机通知</button>
+              <button id="push-test" type="button">测试通知</button>
+              <button id="pro-run" type="button">现在试一条</button>
+            </div>
+            <p id="push-status" class="memory-status"></p>
+          </fieldset>
+        </div>
+        <div class="set-panel" data-panel="notify" data-sub="listen">
+          <fieldset class="group">
+            <label class="switch"><input type="checkbox" id="listen-on"><span>陪听：我放歌时它会随口接一句</span></label>
+            <label class="field"><span>每小时最多</span>
+              <select id="listen-max"><option value="2">2 句</option><option value="4" selected>4 句</option><option value="6">6 句</option><option value="10">10 句</option></select>
+            </label>
+            <small class="memory-status">要先在「连接」里配好听歌（Last.fm）。每句都会花一次额度，换歌后要放半分钟才会考虑，安静时段沿用上面的设置，你刚说完话它不会抢着说。它听不到音频，只知道歌名。</small>
+          </fieldset>
+        </div>
+        <div class="set-panel" data-panel="more">
+          <fieldset class="group">
+            <label class="field"><span>备份</span>
+              <small>每天自动备份一份聊天库，留最近 7 份。备份和聊天库在同一台服务器上，防的是手滑和损坏；想防服务器出事，隔一阵点「下载最新备份」存到自己电脑。备份里有所有密钥，别发给别人。</small>
+            </label>
+            <div class="push-actions">
+              <button id="backup-run" type="button">立即备份</button>
+              <a id="backup-dl" class="btn" href="/api/backup/download" download>下载最新备份</a>
+            </div>
+            <p id="backup-status" class="memory-status"></p>
+          </fieldset>
+          <div class="danger-zone">
+            <button id="reset" type="button">清空聊天重新开始</button>
+            <button id="logout" type="button" hidden>退出登录</button>
+          </div>
+        </div>
       </div>
       <div class="dialog-actions">
         <button value="cancel">取消</button>
