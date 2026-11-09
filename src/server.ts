@@ -510,6 +510,13 @@ app.get("/api/tts/:id", async (c) => {
   return sendAudio(c, audio);
 });
 
+// 首页：给 css/js 的地址带上「这次部署」的版本号，更新后浏览器（尤其 Safari）一定会重新取，不会留着旧样式
+const BUILD = String(Date.now());
+app.get("/", (c) => {
+  const html = readFileSync("public/index.html", "utf8").replace(/(href|src)="\/(style\.css|app\.js|theme\.js)"/g, `$1="/$2?v=${BUILD}"`);
+  c.header("Cache-Control", "no-store");
+  return c.html(html);
+});
 app.use("*", serveStatic({ root: "public" }));
 
 const port = Number(process.env.PORT ?? 3000);

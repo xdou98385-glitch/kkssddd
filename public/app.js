@@ -1305,7 +1305,7 @@ document.addEventListener("keydown", (e) => {
 // ---- 页面切换：对话 / 电台 / 游戏（页面 id 仍叫 board，地址是 #board）----
 const PAGES = { chat: "Claude", radio: "电台", call: "通话", memory: "记忆", letters: "信箱", board: "游戏" };
 // 终端主题：点标题弹出目录。原来的主题用底部标签栏，这个点击不起作用
-$("menu-btn").addEventListener("click", (e) => { if (document.documentElement.dataset.theme !== "term") return; e.stopPropagation(); document.body.classList.toggle("menu-open"); });
+$("menu-btn").addEventListener("click", (e) => { if (document.documentElement.dataset.theme === "classic") return; e.stopPropagation(); document.body.classList.toggle("menu-open"); });
 document.addEventListener("click", (e) => { if (!e.target.closest("#tabs")) document.body.classList.remove("menu-open"); });
 function setPage(p) {
   document.body.classList.remove("menu-open");

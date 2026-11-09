@@ -374,7 +374,7 @@ body[data-page="board"] :is(#messages, #attachments) { display: none; }
    只在 <html data-theme="term"> 时生效，设置里选「原来的样子」就全部不起作用。
    页面切换不再用底部一排标签，改成点标题弹出的目录列表。
    ===================================================================== */
-html[data-theme="term"] {
+html:not([data-theme="classic"]) {
   --bg: #0c1116; --bg-glow: transparent; --surface: #111822; --surface-solid: #131b25;
   --text: #b4c2d1; --muted: #66778a; --hairline: rgba(110, 150, 190, 0.2); --edge: transparent; --shadow: transparent;
   --ink: #7fa6cf; --ink-text: #0c1116; --danger: #c47a72; --acc: #7fa6cf;
@@ -382,95 +382,102 @@ html[data-theme="term"] {
   --serif: var(--mono); --sans: var(--mono);
   color-scheme: dark;
 }
-html[data-theme="term"] body::before { display: none; }
-html[data-theme="term"] :is(.glass, .round, #composer, dialog, .bubble-user) { -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
-html[data-theme="term"] :is(button, input, select, textarea, li, dialog, pre, code, img, details, #composer, .round, .deck, #board, .chip, .toast, .pending-card, .conn-qr, .btn, #set-tabs, #set-tabs button, .msg .bubble) { border-radius: 2px; }
+html:not([data-theme="classic"]) body::before { display: none; }
+html:not([data-theme="classic"]) :is(.glass, .round, #composer, dialog, .bubble-user) { -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; }
+html:not([data-theme="classic"]) :is(button, input, select, textarea, li, dialog, pre, code, img, details, #composer, .round, .deck, #board, .chip, .toast, .pending-card, .conn-qr, .btn, #set-tabs, #set-tabs button, .msg .bubble) { border-radius: 2px; }
 
 /* 顶部：像终端提示符，点它弹出目录 */
-html[data-theme="term"] header { padding-bottom: 8px; border-bottom: 1px solid var(--hairline); }
-html[data-theme="term"] .titlebox { flex: 1; text-align: left; padding-left: 4px; cursor: pointer; -webkit-user-select: none; user-select: none; }
-html[data-theme="term"] header h1 { font-size: 0; letter-spacing: 0; text-align: left; }
-html[data-theme="term"] header h1::before { font: 500 14px/1 var(--mono); color: var(--acc); content: "claude@kay:~/chat ▾"; }
-html[data-theme="term"] body[data-page="radio"] header h1::before { content: "claude@kay:~/radio ▾"; }
-html[data-theme="term"] body[data-page="call"] header h1::before { content: "claude@kay:~/call ▾"; }
-html[data-theme="term"] body[data-page="memory"] header h1::before { content: "claude@kay:~/memory ▾"; }
-html[data-theme="term"] body[data-page="letters"] header h1::before { content: "claude@kay:~/letters ▾"; }
-html[data-theme="term"] body[data-page="board"] header h1::before { content: "claude@kay:~/games ▾"; }
-html[data-theme="term"] #since { margin-top: 6px; letter-spacing: 0.06em; }
-html[data-theme="term"] header .spacer { display: none; }
-html[data-theme="term"] .round { width: 34px; height: 34px; border-color: var(--hairline); }
-html[data-theme="term"] #settings-btn { order: 2; }
+html:not([data-theme="classic"]) header { padding-bottom: 8px; border-bottom: 1px solid var(--hairline); }
+html:not([data-theme="classic"]) .titlebox { flex: 1; text-align: left; padding-left: 4px; cursor: pointer; -webkit-user-select: none; user-select: none; }
+html:not([data-theme="classic"]) header h1 { font-size: 0; letter-spacing: 0; text-align: left; }
+html:not([data-theme="classic"]) header h1::before { font: 500 14px/1 var(--mono); color: var(--acc); content: "claude@kay:~/chat ▾"; }
+html:not([data-theme="classic"]) body[data-page="radio"] header h1::before { content: "claude@kay:~/radio ▾"; }
+html:not([data-theme="classic"]) body[data-page="call"] header h1::before { content: "claude@kay:~/call ▾"; }
+html:not([data-theme="classic"]) body[data-page="memory"] header h1::before { content: "claude@kay:~/memory ▾"; }
+html:not([data-theme="classic"]) body[data-page="letters"] header h1::before { content: "claude@kay:~/letters ▾"; }
+html:not([data-theme="classic"]) body[data-page="board"] header h1::before { content: "claude@kay:~/games ▾"; }
+html:not([data-theme="classic"]) #since { margin-top: 6px; letter-spacing: 0.06em; }
+html:not([data-theme="classic"]) header .spacer { display: none; }
+html:not([data-theme="classic"]) .round { width: 34px; height: 34px; border-color: var(--hairline); }
+html:not([data-theme="classic"]) #settings-btn { order: 2; }
 
 /* 目录：覆盖在内容上面，不占底部空间 */
-html[data-theme="term"] #tabs { display: none; position: absolute; z-index: 30; left: 14px; top: calc(54px + env(safe-area-inset-top)); flex-direction: column; gap: 0; margin: 0; padding: 6px 0; min-width: 190px; background: var(--surface-solid); border: 1px solid var(--acc); border-radius: 2px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); -webkit-backdrop-filter: none; backdrop-filter: none; }
-html[data-theme="term"] body.menu-open #tabs { display: flex; }
-html[data-theme="term"] #tabs button { display: flex; gap: 14px; padding: 11px 16px; text-align: left; letter-spacing: 0.04em; text-indent: 0; font: 500 13.5px/1 var(--mono); color: var(--text); border-radius: 0; background: none; box-shadow: none; }
-html[data-theme="term"] #tabs button::before { content: attr(data-en); display: inline-block; min-width: 6.5em; color: var(--muted); }
-html[data-theme="term"] #tabs button[aria-current="true"] { background: color-mix(in srgb, var(--acc) 14%, transparent); box-shadow: none; color: var(--acc); }
-html[data-theme="term"] #tabs button[aria-current="true"]::before { content: "▸ " attr(data-en); color: var(--acc); }
-html[data-theme="term"] #tabs button[hidden] { display: none; }
+html:not([data-theme="classic"]) #tabs { display: none; position: absolute; z-index: 30; left: 14px; top: calc(54px + env(safe-area-inset-top)); flex-direction: column; gap: 0; margin: 0; padding: 6px 0; min-width: 190px; background: var(--surface-solid); border: 1px solid var(--acc); border-radius: 2px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5); -webkit-backdrop-filter: none; backdrop-filter: none; }
+html:not([data-theme="classic"]) body.menu-open #tabs { display: flex; }
+html:not([data-theme="classic"]) #tabs button { display: flex; gap: 14px; padding: 11px 16px; text-align: left; letter-spacing: 0.04em; text-indent: 0; font: 500 13.5px/1 var(--mono); color: var(--text); border-radius: 0; background: none; box-shadow: none; }
+html:not([data-theme="classic"]) #tabs button::before { content: attr(data-en); display: inline-block; min-width: 6.5em; color: var(--muted); }
+html:not([data-theme="classic"]) #tabs button[aria-current="true"] { background: color-mix(in srgb, var(--acc) 14%, transparent); box-shadow: none; color: var(--acc); }
+html:not([data-theme="classic"]) #tabs button[aria-current="true"]::before { content: "▸ " attr(data-en); color: var(--acc); }
+html:not([data-theme="classic"]) #tabs button[hidden] { display: none; }
 
 /* 消息：不画气泡，她的话前面一个 ›，它的话左边一条细线 */
-html[data-theme="term"] #messages { -webkit-mask-image: none; mask-image: none; padding-top: 16px; }
-html[data-theme="term"] .msg { margin-bottom: 20px; }
-html[data-theme="term"] .msg.user { align-items: flex-start; }
-html[data-theme="term"] .msg.user .bubble { position: relative; max-width: 100%; padding: 0 0 0 16px; background: none; border: 0; box-shadow: none; border-radius: 0; color: var(--acc); font-size: 14.5px; line-height: 1.8; }
-html[data-theme="term"] .msg.user .bubble::before { content: "›"; position: absolute; left: 2px; top: 0; color: var(--muted); }
-html[data-theme="term"] .msg.assistant .bubble { font-size: 14.5px; line-height: 1.85; letter-spacing: 0; max-width: none; padding-left: 12px; border-left: 1px solid var(--hairline); border-radius: 0; }
-html[data-theme="term"] .bubble code, html[data-theme="term"] .bubble pre { border: 1px solid var(--hairline); }
-html[data-theme="term"] .time { font-family: var(--mono); letter-spacing: 0.04em; padding-left: 12px; }
-html[data-theme="term"] .msg.user .time { padding-left: 16px; }
-html[data-theme="term"] .day { letter-spacing: 0.1em; font-family: var(--mono); }
-html[data-theme="term"] .tool { font-family: var(--mono); padding-left: 12px; }
-html[data-theme="term"] .tool::before { border-radius: 0; width: 4px; height: 4px; background: var(--acc); }
-html[data-theme="term"] .empty { font-style: normal; font-family: var(--mono); letter-spacing: 0.04em; }
-html[data-theme="term"] .hero, html[data-theme="term"] .call-moon img { filter: invert(1) sepia(1) saturate(0.9) hue-rotate(170deg) brightness(0.9); opacity: 0.8; }
+html:not([data-theme="classic"]) #messages { -webkit-mask-image: none; mask-image: none; padding-top: 16px; }
+html:not([data-theme="classic"]) .msg { margin-bottom: 20px; }
+html:not([data-theme="classic"]) .msg.user { align-items: flex-start; }
+html:not([data-theme="classic"]) .msg.user .bubble { position: relative; max-width: 100%; padding: 0 0 0 16px; background: none; border: 0; box-shadow: none; border-radius: 0; color: var(--acc); font-size: 14.5px; line-height: 1.8; }
+html:not([data-theme="classic"]) .msg.user .bubble::before { content: "›"; position: absolute; left: 2px; top: 0; color: var(--muted); }
+html:not([data-theme="classic"]) .msg.assistant .bubble { font-size: 14.5px; line-height: 1.85; letter-spacing: 0; max-width: none; padding-left: 12px; border-left: 1px solid var(--hairline); border-radius: 0; }
+html:not([data-theme="classic"]) .bubble code, html:not([data-theme="classic"]) .bubble pre { border: 1px solid var(--hairline); }
+html:not([data-theme="classic"]) .time { font-family: var(--mono); letter-spacing: 0.04em; padding-left: 12px; }
+html:not([data-theme="classic"]) .msg.user .time { padding-left: 16px; }
+html:not([data-theme="classic"]) .day { letter-spacing: 0.1em; font-family: var(--mono); }
+html:not([data-theme="classic"]) .tool { font-family: var(--mono); padding-left: 12px; }
+html:not([data-theme="classic"]) .tool::before { border-radius: 0; width: 4px; height: 4px; background: var(--acc); }
+html:not([data-theme="classic"]) .empty { font-style: normal; font-family: var(--mono); letter-spacing: 0.04em; }
+html:not([data-theme="classic"]) .hero, html:not([data-theme="classic"]) .call-moon img { filter: invert(1) sepia(1) saturate(0.9) hue-rotate(170deg) brightness(0.9); opacity: 0.8; }
 
 /* 输入：一行提示符 */
-html[data-theme="term"] #composer { margin: 0 12px calc(10px + env(safe-area-inset-bottom)); padding: 4px; border-radius: 2px; border: 1px solid var(--hairline); border-top-color: var(--acc); background: var(--surface); }
-html[data-theme="term"] #input { font: 14.5px/1.6 var(--mono); }
-html[data-theme="term"] #composer:focus-within { border-color: var(--acc); }
-html[data-theme="term"] .round.solid { border-radius: 2px; width: 36px; height: 36px; box-shadow: none; }
-html[data-theme="term"] .round.flat { border-color: transparent; }
+html:not([data-theme="classic"]) #composer { margin: 0 12px calc(10px + env(safe-area-inset-bottom)); padding: 4px; border-radius: 2px; border: 1px solid var(--hairline); border-top-color: var(--acc); background: var(--surface); }
+html:not([data-theme="classic"]) #input { font: 14.5px/1.6 var(--mono); }
+html:not([data-theme="classic"]) #composer:focus-within { border-color: var(--acc); }
+html:not([data-theme="classic"]) .round.solid { border-radius: 2px; width: 36px; height: 36px; box-shadow: none; }
+html:not([data-theme="classic"]) .round.flat { border-color: transparent; }
 
 /* 其他页面和设置：直角、细线，用同一套颜色 */
-html[data-theme="term"] dialog { border: 1px solid var(--acc); border-radius: 2px; }
-html[data-theme="term"] dialog button, html[data-theme="term"] .btn { border-radius: 2px; }
-html[data-theme="term"] #set-tabs button[aria-current="true"], html[data-theme="term"] #tabs button[aria-current="true"] { background: color-mix(in srgb, var(--acc) 14%, transparent); box-shadow: none; }
-html[data-theme="term"] #mem-filter button, html[data-theme="term"] #mem-list li, html[data-theme="term"] #lt-list li { border-radius: 2px; }
-html[data-theme="term"] #mem-filter button { text-transform: lowercase; }
-html[data-theme="term"] #mem-filter button[aria-current="true"] { color: var(--acc); border-color: var(--acc); }
-html[data-theme="term"] #mem-list li[data-core="1"] { border-color: var(--acc); }
-html[data-theme="term"] .conn-state.on::before { border-radius: 0; background: var(--acc); }
-html[data-theme="term"] #board { border-radius: 2px; }
-html[data-theme="term"] :is(#memory, #letters, #radio) { padding-top: 16px; }
+html:not([data-theme="classic"]) dialog { border: 1px solid var(--acc); border-radius: 2px; }
+html:not([data-theme="classic"]) dialog button, html:not([data-theme="classic"]) .btn { border-radius: 2px; }
+html:not([data-theme="classic"]) #set-tabs button[aria-current="true"], html:not([data-theme="classic"]) #tabs button[aria-current="true"] { background: color-mix(in srgb, var(--acc) 14%, transparent); box-shadow: none; }
+html:not([data-theme="classic"]) #mem-filter button, html:not([data-theme="classic"]) #mem-list li, html:not([data-theme="classic"]) #lt-list li { border-radius: 2px; }
+html:not([data-theme="classic"]) #mem-filter button { text-transform: lowercase; }
+html:not([data-theme="classic"]) #mem-filter button[aria-current="true"] { color: var(--acc); border-color: var(--acc); }
+html:not([data-theme="classic"]) #mem-list li[data-core="1"] { border-color: var(--acc); }
+html:not([data-theme="classic"]) .conn-state.on::before { border-radius: 0; background: var(--acc); }
+html:not([data-theme="classic"]) #board { border-radius: 2px; }
+html:not([data-theme="classic"]) :is(#memory, #letters, #radio) { padding-top: 16px; }
 
 /* 游戏页顶部的游戏选择，以后加五子棋之类就在这一排多一个按钮 */
 #game-pick { display: flex; gap: 6px; margin: 0 20px 10px; flex-wrap: wrap; }
 #game-pick button { padding: 5px 14px; border-radius: 999px; background: transparent; border: 1px solid var(--hairline); color: var(--muted); font: 12.5px/1.4 var(--sans); letter-spacing: 0.1em; }
 #game-pick button[aria-current="true"] { color: var(--text); border-color: var(--muted); }
-html[data-theme="term"] #game-pick button { border-radius: 2px; }
-html[data-theme="term"] #game-pick button[aria-current="true"] { color: var(--acc); border-color: var(--acc); }
+html:not([data-theme="classic"]) #game-pick button { border-radius: 2px; }
+html:not([data-theme="classic"]) #game-pick button[aria-current="true"] { color: var(--acc); border-color: var(--acc); }
 
 /* 游戏页：数独和五子棋各用各的一套控件，按 data-kind 显示 */
 #game[data-kind="sudoku"] .gk-gomoku, #game[data-kind="gomoku"] .gk-sudoku { display: none; }
 #gboard { display: block; touch-action: manipulation; border-radius: 16px; background: var(--surface); border: 1px solid var(--hairline); }
-html[data-theme="term"] #gboard { border-radius: 2px; }
+html:not([data-theme="classic"]) #gboard { border-radius: 2px; }
 
 /* 终端主题再压紧一点：字小一号、行距和段间距收小，一条回复别占掉半屏 */
-html[data-theme="term"] #messages { padding: 12px 16px 16px; }
-html[data-theme="term"] .msg { margin-bottom: 14px; }
-html[data-theme="term"] .msg.assistant .bubble, html[data-theme="term"] .msg.user .bubble { font-size: 13.5px; line-height: 1.65; }
-html[data-theme="term"] .bubble p { margin: 0 0 0.5em; }
-html[data-theme="term"] .bubble :is(ul, ol) { margin: 0.3em 0 0.5em; padding-left: 1.3em; }
-html[data-theme="term"] .bubble li { margin: 0.1em 0; }
-html[data-theme="term"] .msg.assistant .bubble { padding-left: 10px; }
-html[data-theme="term"] .msg.user .bubble { padding-left: 14px; }
-html[data-theme="term"] .time { margin-top: 4px; font-size: 10.5px; padding-left: 10px; }
-html[data-theme="term"] .msg.user .time { padding-left: 14px; }
-html[data-theme="term"] .day { margin: 2px 0 14px; font-size: 10.5px; }
-html[data-theme="term"] .tool { font-size: 11.5px; margin: -4px 0 10px; }
-html[data-theme="term"] #input { font-size: 13.5px; }
-html[data-theme="term"] header h1::before { color: #9cc0e4; }
-html[data-theme="term"] #since { color: #7d90a4; }
-html[data-theme="term"] .say { font-size: 13.5px; line-height: 1.65; }
+html:not([data-theme="classic"]) #messages { padding: 12px 16px 16px; }
+html:not([data-theme="classic"]) .msg { margin-bottom: 14px; }
+html:not([data-theme="classic"]) .msg.assistant .bubble, html:not([data-theme="classic"]) .msg.user .bubble { font-size: 13.5px; line-height: 1.65; }
+html:not([data-theme="classic"]) .bubble p { margin: 0 0 0.5em; }
+html:not([data-theme="classic"]) .bubble :is(ul, ol) { margin: 0.3em 0 0.5em; padding-left: 1.3em; }
+html:not([data-theme="classic"]) .bubble li { margin: 0.1em 0; }
+html:not([data-theme="classic"]) .msg.assistant .bubble { padding-left: 10px; }
+html:not([data-theme="classic"]) .msg.user .bubble { padding-left: 14px; }
+html:not([data-theme="classic"]) .time { margin-top: 4px; font-size: 10.5px; padding-left: 10px; }
+html:not([data-theme="classic"]) .msg.user .time { padding-left: 14px; }
+html:not([data-theme="classic"]) .day { margin: 2px 0 14px; font-size: 10.5px; }
+html:not([data-theme="classic"]) .tool { font-size: 11.5px; margin: -4px 0 10px; }
+html:not([data-theme="classic"]) #input { font-size: 13.5px; }
+html:not([data-theme="classic"]) header h1::before { color: #9cc0e4; }
+html:not([data-theme="classic"]) #since { color: #7d90a4; }
+html:not([data-theme="classic"]) .say { font-size: 13.5px; line-height: 1.65; }
+
+/* 手机顶栏离状态栏太近：多留一点；正文字号回到 15px */
+html:not([data-theme="classic"]) header { padding-top: calc(24px + env(safe-area-inset-top)); padding-bottom: 12px; }
+html:not([data-theme="classic"]) #tabs { top: calc(76px + env(safe-area-inset-top)); }
+html:not([data-theme="classic"]) .msg.assistant .bubble, html:not([data-theme="classic"]) .msg.user .bubble, html:not([data-theme="classic"]) .say { font-size: 15px; line-height: 1.7; }
+html:not([data-theme="classic"]) #input { font-size: 15px; }
+html:not([data-theme="classic"]) header h1::before { font-size: 15px; }
