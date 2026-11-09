@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { load as gomokuLoad, viewText as gomokuViewText } from "./gomoku.ts";
 import { CATS as MEM_CATS, coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
 import { activitySummary, deviceEnabled, userTz } from "./device.ts";
@@ -67,6 +68,7 @@ const memoryTools: Tool[] = [
   },
 ];
 
+const gomokuView = () => gomokuViewText(gomokuLoad());
 // ---- 数独：Claude 看棋盘、给提示、替她落子 ----
 const gameTools: Tool[] = [
   {
@@ -120,6 +122,17 @@ const gameTools: Tool[] = [
     label: (input) => `落子：${input.cell} = ${input.value}`,
   },
 ];
+
+gameTools.push({
+  def: {
+    name: "gomoku_view",
+    description: "查看小月正在玩的五子棋棋盘：棋盘图、最近几手、谁赢了。她提到五子棋、问局面、让你评论或陪她玩时先调用它。注意：白棋是内置程序下的，不是你算的。",
+    strict: true,
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  run: async () => gomokuView(),
+  label: () => "看了眼五子棋",
+});
 
 // ---- 微信读书：只给一个工具，接口表和字段规则放在提示词里（见 persona.ts 的 WEREAD_GUIDE）----
 const WEREAD_LABELS: Record<string, string> = {

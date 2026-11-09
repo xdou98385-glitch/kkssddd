@@ -29,9 +29,9 @@
       <div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
     </div>
 
-    <section id="game" hidden aria-label="游戏">
-      <div id="game-pick" role="tablist"><button type="button" data-g="sudoku" aria-current="true">数独</button></div>
-      <div class="game-top">
+    <section id="game" hidden aria-label="游戏" data-kind="sudoku">
+      <div id="game-pick" role="tablist"><button type="button" data-g="sudoku" aria-current="true">数独</button><button type="button" data-g="gomoku">五子棋</button></div>
+      <div class="game-top gk-sudoku">
         <span id="game-meta"></span>
         <span class="game-actions">
           <button id="g-hint" type="button">要提示</button>
@@ -39,8 +39,16 @@
           <button id="g-new" type="button">新局</button>
         </span>
       </div>
-      <div id="board" role="grid"></div>
-      <div id="pad"></div>
+      <div id="board" class="gk-sudoku" role="grid"></div>
+      <div id="pad" class="gk-sudoku"></div>
+      <div class="game-top gk-gomoku">
+        <span id="gm-meta"></span>
+        <span class="game-actions">
+          <button id="gm-undo" type="button">悔棋</button>
+          <button id="gm-new" type="button">新局</button>
+        </span>
+      </div>
+      <canvas id="gboard" class="gk-gomoku" aria-label="五子棋棋盘"></canvas>
       <div id="game-say" class="say"></div>
     </section>
 
@@ -209,6 +217,22 @@
         <button value="easy" type="submit">简单</button>
         <button value="medium" type="submit">中等</button>
         <button value="hard" type="submit">困难</button>
+      </div>
+      <div class="dialog-actions"><button value="cancel">取消</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="new-gomoku">
+    <form method="dialog">
+      <h2>新开一局五子棋</h2>
+      <p class="memory-status">黑棋是你，白棋是程序。选难度和谁先手。</p>
+      <div class="level-pick">
+        <button value="easy:me" type="submit">容易 · 我先</button>
+        <button value="normal:me" type="submit">普通 · 我先</button>
+        <button value="hard:me" type="submit">较难 · 我先</button>
+        <button value="easy:it" type="submit">容易 · 它先</button>
+        <button value="normal:it" type="submit">普通 · 它先</button>
+        <button value="hard:it" type="submit">较难 · 它先</button>
       </div>
       <div class="dialog-actions"><button value="cancel">取消</button></div>
     </form>

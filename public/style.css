@@ -451,3 +451,26 @@ html[data-theme="term"] :is(#memory, #letters, #radio) { padding-top: 16px; }
 #game-pick button[aria-current="true"] { color: var(--text); border-color: var(--muted); }
 html[data-theme="term"] #game-pick button { border-radius: 2px; }
 html[data-theme="term"] #game-pick button[aria-current="true"] { color: var(--acc); border-color: var(--acc); }
+
+/* 游戏页：数独和五子棋各用各的一套控件，按 data-kind 显示 */
+#game[data-kind="sudoku"] .gk-gomoku, #game[data-kind="gomoku"] .gk-sudoku { display: none; }
+#gboard { display: block; touch-action: manipulation; border-radius: 16px; background: var(--surface); border: 1px solid var(--hairline); }
+html[data-theme="term"] #gboard { border-radius: 2px; }
+
+/* 终端主题再压紧一点：字小一号、行距和段间距收小，一条回复别占掉半屏 */
+html[data-theme="term"] #messages { padding: 12px 16px 16px; }
+html[data-theme="term"] .msg { margin-bottom: 14px; }
+html[data-theme="term"] .msg.assistant .bubble, html[data-theme="term"] .msg.user .bubble { font-size: 13.5px; line-height: 1.65; }
+html[data-theme="term"] .bubble p { margin: 0 0 0.5em; }
+html[data-theme="term"] .bubble :is(ul, ol) { margin: 0.3em 0 0.5em; padding-left: 1.3em; }
+html[data-theme="term"] .bubble li { margin: 0.1em 0; }
+html[data-theme="term"] .msg.assistant .bubble { padding-left: 10px; }
+html[data-theme="term"] .msg.user .bubble { padding-left: 14px; }
+html[data-theme="term"] .time { margin-top: 4px; font-size: 10.5px; padding-left: 10px; }
+html[data-theme="term"] .msg.user .time { padding-left: 14px; }
+html[data-theme="term"] .day { margin: 2px 0 14px; font-size: 10.5px; }
+html[data-theme="term"] .tool { font-size: 11.5px; margin: -4px 0 10px; }
+html[data-theme="term"] #input { font-size: 13.5px; }
+html[data-theme="term"] header h1::before { color: #9cc0e4; }
+html[data-theme="term"] #since { color: #7d90a4; }
+html[data-theme="term"] .say { font-size: 13.5px; line-height: 1.65; }

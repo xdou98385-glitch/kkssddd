@@ -1104,7 +1104,7 @@ $("logout").onclick = async () => {
 };
 
 // ---- 数独 ----
-const game = { open: false, state: null, sel: -1, cells: [] };
+const game = { open: false, kind: "sudoku", state: null, sel: -1, cells: [], gm: null, gmBusy: false };
 const boardEl = $("board");
 
 function buildBoard() {
@@ -1134,9 +1134,99 @@ function buildBoard() {
 }
 
 async function gameLoad() {
+  document.querySelector("#game").dataset.kind = game.kind;
+  for (const b of $("game-pick").children) b.setAttribute("aria-current", String(b.dataset.g === game.kind));
+  if (game.kind === "gomoku") return gomokuLoad();
   try { game.state = await api("/game/sudoku"); } catch { return; }
   renderGame();
 }
+$("game-pick").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || b.dataset.g === game.kind) return;
+  game.kind = b.dataset.g;
+  $("game-say").textContent = "";
+  gameLoad();
+});
+
+// ---- 五子棋：黑棋是她，白棋是服务器里的小程序（不花钱），Claude 只负责聊天 ----
+const GM_N = 15;
+function gomokuDraw() {
+  const cv = $("gboard"), s = game.gm;
+  if (!cv || !s) return;
+  const css = getComputedStyle(document.documentElement);
+  const px = Math.min(cv.parentElement.clientWidth - 40, 380, Math.max(300, window.innerHeight * 0.5));
+  const dpr = window.devicePixelRatio || 1;
+  cv.style.width = cv.style.height = px + "px";
+  cv.width = cv.height = Math.round(px * dpr);
+  const g = cv.getContext("2d");
+  g.scale(dpr, dpr);
+  const cs = px / GM_N, off = cs / 2;
+  const col = (v, fb) => css.getPropertyValue(v).trim() || fb;
+  const text = col("--text", "#222"), acc = col("--acc", text), line = col("--muted", "#888");
+  g.clearRect(0, 0, px, px);
+  g.strokeStyle = line; g.globalAlpha = 0.45; g.lineWidth = 1;
+  for (let i = 0; i < GM_N; i++) {
+    const p = Math.round(off + i * cs) + 0.5;
+    g.beginPath(); g.moveTo(off, p); g.lineTo(px - off, p); g.moveTo(p, off); g.lineTo(p, px - off); g.stroke();
+  }
+  g.globalAlpha = 0.7; g.fillStyle = line;
+  for (const [r, c] of [[3, 3], [3, 11], [11, 3], [11, 11], [7, 7]]) { g.beginPath(); g.arc(off + c * cs, off + r * cs, 2.2, 0, 7); g.fill(); }
+  g.globalAlpha = 1;
+  const R = cs * 0.42;
+  for (let i = 0; i < s.cells.length; i++) {
+    const v = s.cells[i];
+    if (v === "0") continue;
+    const x = off + (i % GM_N) * cs, y = off + Math.floor(i / GM_N) * cs;
+    g.beginPath(); g.arc(x, y, R, 0, 7);
+    if (v === "1") { g.fillStyle = acc; g.fill(); }
+    else { g.lineWidth = 2; g.strokeStyle = text; g.stroke(); g.fillStyle = col("--bg", "#111"); g.fill(); g.stroke(); }
+  }
+  for (const i of [s.lastMe, s.lastIt]) { // 最近一手：小方块
+    if (i < 0) continue;
+    const x = off + (i % GM_N) * cs, y = off + Math.floor(i / GM_N) * cs;
+    g.fillStyle = s.cells[i] === "1" ? col("--bg", "#111") : text;
+    g.fillRect(x - 2.5, y - 2.5, 5, 5);
+  }
+  if (s.line?.length) { // 连成五子的那条线
+    const a = s.line[0], b = s.line[s.line.length - 1];
+    g.strokeStyle = col("--danger", "#c55"); g.lineWidth = 3; g.lineCap = "round";
+    g.beginPath(); g.moveTo(off + (a % GM_N) * cs, off + Math.floor(a / GM_N) * cs); g.lineTo(off + (b % GM_N) * cs, off + Math.floor(b / GM_N) * cs); g.stroke();
+  }
+}
+function gomokuRender() {
+  const s = game.gm;
+  if (!s) return;
+  $("gm-meta").textContent = s.status === "won" ? (s.winner === 1 ? "你赢了" : "它赢了") : s.status === "draw" ? "平局" : `${s.levelLabel} · 第 ${s.moves} 手`;
+  gomokuDraw();
+}
+async function gomokuLoad() {
+  try { game.gm = await api("/game/gomoku"); } catch { return; }
+  gomokuRender();
+}
+$("gboard").addEventListener("pointerdown", async (e) => {
+  const s = game.gm;
+  if (!s || s.status !== "playing" || game.gmBusy) return;
+  const r = e.currentTarget.getBoundingClientRect(), cs = r.width / GM_N;
+  const c = Math.floor((e.clientX - r.left) / cs), row = Math.floor((e.clientY - r.top) / cs);
+  if (c < 0 || row < 0 || c >= GM_N || row >= GM_N || s.cells[row * GM_N + c] !== "0") return;
+  game.gmBusy = true;
+  try { game.gm = await api("/game/gomoku/move", { method: "POST", body: { index: row * GM_N + c } }); } catch { /* 点到别处了，忽略 */ }
+  game.gmBusy = false;
+  gomokuRender();
+});
+$("gm-undo").onclick = async () => { try { game.gm = await api("/game/gomoku/undo", { method: "POST" }); gomokuRender(); } catch { /* 没得悔 */ } };
+$("gm-new").onclick = () => $("new-gomoku").showModal();
+$("new-gomoku").addEventListener("close", async (e) => {
+  const v = e.target.returnValue;
+  e.target.returnValue = "";
+  if (!v.includes(":")) return;
+  const s = game.gm;
+  if (s && s.status === "playing" && s.moves > 1 && !confirm("放弃现在这局，开新的？")) return;
+  const [level, first] = v.split(":");
+  game.gm = await api("/game/gomoku/new", { method: "POST", body: { level, first } });
+  gomokuRender();
+});
+window.addEventListener("resize", () => { if (game.open && game.kind === "gomoku") gomokuDraw(); });
 
 function renderGame() {
   const s = game.state;
@@ -1194,7 +1284,7 @@ $("new-game").addEventListener("close", async (e) => {
 });
 // 电脑键盘：数字填入，退格擦除，方向键移动
 document.addEventListener("keydown", (e) => {
-  if (!game.open || e.target.matches("textarea, input, select") || e.metaKey || e.ctrlKey) return;
+  if (!game.open || game.kind !== "sudoku" || e.target.matches("textarea, input, select") || e.metaKey || e.ctrlKey) return;
   if (/^[1-9]$/.test(e.key)) gameMove(Number(e.key));
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") gameMove(0);
   else if (e.key.startsWith("Arrow") && game.sel >= 0) {

@@ -18,6 +18,7 @@ import { getProactive, heartbeat, startScheduler, updateProactive } from "./proa
 import { getListen, startListenScheduler, updateListen } from "./listen.ts";
 import { startSchedulerTick } from "./scheduler.ts";
 import { latestBackupPath, listBackups, runBackup, startBackups } from "./backup.ts";
+import * as gm from "./gomoku.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { startPodcast } from "./podcast.ts";
 import { emailLetter, getLetterCfg, setLetterCfg, startLetter } from "./letter.ts";
@@ -87,6 +88,22 @@ app.post("/api/game/sudoku/move", async (c) => {
   if (err) return c.json({ error: err }, 400);
   saveGame(g);
   return c.json(publicState(g));
+});
+
+// ---- 五子棋（程序下白棋，不调用 Claude）----
+app.get("/api/game/gomoku", (c) => c.json(gm.publicState(gm.load())));
+app.post("/api/game/gomoku/new", async (c) => {
+  const b = await c.req.json<{ level?: string; first?: string }>().catch(() => ({} as { level?: string; first?: string }));
+  return c.json(gm.publicState(gm.newGame(String(b.level ?? "normal"), String(b.first ?? "me"))));
+});
+app.post("/api/game/gomoku/move", async (c) => {
+  const { index } = await c.req.json<{ index?: number }>();
+  const err = gm.play(Number(index));
+  return err ? c.json({ error: err }, 400) : c.json(gm.publicState(gm.load()));
+});
+app.post("/api/game/gomoku/undo", (c) => {
+  const err = gm.undo();
+  return err ? c.json({ error: err }, 400) : c.json(gm.publicState(gm.load()));
 });
 
 // ---- 通知与主动消息 ----
