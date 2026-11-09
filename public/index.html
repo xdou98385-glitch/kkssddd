@@ -72,14 +72,10 @@
     <section id="memory" hidden aria-label="记忆">
       <form id="mem-add">
         <textarea id="mem-new" rows="2" maxlength="2000" placeholder="想让它记住什么（可空）"></textarea>
+        <select id="mem-cat" aria-label="分类"></select>
         <button type="submit">记下</button>
       </form>
-      <div id="mem-filter" role="tablist">
-        <button type="button" data-f="all" aria-current="true">全部</button>
-        <button type="button" data-f="core">钉住的</button>
-        <button type="button" data-f="claude">它写的</button>
-        <button type="button" data-f="mine">我写的</button>
-      </div>
+      <div id="mem-filter" role="tablist"></div>
       <p id="mem-status" class="memory-status"></p>
       <ol id="mem-list"></ol>
     </section>

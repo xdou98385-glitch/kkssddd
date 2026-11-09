@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
+import { CATS as MEM_CATS, coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
 import { activitySummary, deviceEnabled, userTz } from "./device.ts";
 import * as db from "./db.ts";
@@ -56,12 +56,13 @@ const memoryTools: Tool[] = [
         type: "object",
         properties: {
           content: { type: "string", description: "要记住的内容" },
+          category: { type: "string", enum: [...MEM_CATS, "其他"], description: "分类：日常、情感、饮食、学习、健康、计划，都不合适就选其他" },
         },
-        required: ["content"],
+        required: ["content", "category"],
         additionalProperties: false,
       },
     },
-    run: (input) => saveMemo(String(input.content ?? "")),
+    run: (input) => saveMemo(String(input.content ?? ""), String(input.category ?? "")),
     label: (input) => `记下了：${input.content}`,
   },
 ];

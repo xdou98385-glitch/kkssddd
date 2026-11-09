@@ -11,7 +11,7 @@ import { buildHistory, buildSystem, DEFAULT_WINDOW, maybeSummarize, stripToolMar
 import { isImageName, readImage, saveImage } from "./uploads.ts";
 import { DEFAULT_SYSTEM } from "./persona.ts";
 import { wereadStatus } from "./weread.ts";
-import { addMemory, deleteMemory, listMemories, memosEnabled, memosStatus, pinMemory, updateMemory } from "./memos.ts";
+import { CATS, addMemory, deleteMemory, listMemories, memosEnabled, memosStatus, updateMemory } from "./memos.ts";
 import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
@@ -207,16 +207,15 @@ app.get("/api/memory/status", async (c) => c.json(await memosStatus()));
 const memErr = (c: Context, err: unknown) => c.json({ error: (err as Error).message }, 400);
 app.get("/api/memories", async (c) => {
   if (!memosEnabled) return c.json({ enabled: false, items: [] });
-  try { return c.json({ enabled: true, items: await listMemories() }); } catch (err) { return memErr(c, err); }
+  try { return c.json({ enabled: true, items: await listMemories(), cats: CATS }); } catch (err) { return memErr(c, err); }
 });
 app.post("/api/memories", async (c) => {
-  try { await addMemory(String((await c.req.json()).content ?? "")); return c.json({ ok: true }); } catch (err) { return memErr(c, err); }
+  try { const b = await c.req.json(); await addMemory(String(b.content ?? ""), String(b.cat ?? "")); return c.json({ ok: true }); } catch (err) { return memErr(c, err); }
 });
 app.put("/api/memories/:id", async (c) => {
   try {
     const b = await c.req.json();
-    if (typeof b.core === "boolean") await pinMemory(c.req.param("id"), b.core);
-    else await updateMemory(c.req.param("id"), String(b.content ?? ""));
+    await updateMemory(c.req.param("id"), { content: typeof b.content === "string" ? b.content : undefined, cat: typeof b.cat === "string" ? b.cat : undefined, core: typeof b.core === "boolean" ? b.core : undefined });
     return c.json({ ok: true });
   } catch (err) { return memErr(c, err); }
 });

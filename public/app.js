@@ -1239,11 +1239,22 @@ function showSince(since) {
 }
 
 // ---- 记忆页 ----
-const mem = { items: [], filter: "all" };
+const mem = { items: [], filter: "all", cats: [] };
 function memStatus(text, bad = false) { setStatus("mem-status", text, bad); }
+function memFilters() {
+  const f = $("mem-filter");
+  f.replaceChildren(...[["all", "全部"], ["core", "钉住的"], ...mem.cats.map((c) => [c, c]), ["none", "未分类"]].map(([k, t]) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.f = k; b.textContent = t;
+    b.setAttribute("aria-current", String(k === mem.filter));
+    return b;
+  }));
+  const opts = (blank) => [`<option value="">${blank}</option>`, ...mem.cats.map((c) => `<option>${c}</option>`)].join("");
+  if (!$("mem-cat").options.length) $("mem-cat").innerHTML = opts("未分类");
+}
 function memShow() {
   const list = $("mem-list");
-  const rows = mem.items.filter((x) => mem.filter === "all" || (mem.filter === "core" && x.core) || (mem.filter === "claude" && x.claude) || (mem.filter === "mine" && !x.claude));
+  const rows = mem.items.filter((x) => mem.filter === "all" || (mem.filter === "core" && x.core) || (mem.filter === "none" && !x.cat) || x.cat === mem.filter);
   list.replaceChildren(...rows.map(memRow));
   if (!rows.length) { const li = document.createElement("li"); li.textContent = "这里还没有东西"; li.className = "mem-body"; list.append(li); }
 }
@@ -1252,29 +1263,35 @@ function memRow(x) {
   li.dataset.core = x.core ? "1" : "";
   const body = document.createElement("div");
   body.className = "mem-body";
-  const plain = (t) => t.replace(/(^|\s)#(core|claude)(?=\s|$)/g, "$1").trim();
-  body.textContent = plain(x.content);
+  body.textContent = x.content;
   const meta = document.createElement("div");
   meta.className = "mem-meta";
   const label = document.createElement("span");
-  label.textContent = x.createTime.slice(0, 10) + (x.claude ? " · 它写的" : "") + (x.core ? " · 钉住" : "");
+  label.textContent = x.createTime.slice(0, 10) + (x.core ? " · 钉住" : "");
   const btns = document.createElement("span");
   btns.className = "mem-btns";
+  const url = "/memories/" + encodeURIComponent(x.id);
   const mk = (t, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = t; b.onclick = fn; btns.append(b); return b; };
   const act = async (fn, ok) => { try { await fn(); await loadMemories(); memStatus(ok); } catch (err) { memStatus("没成功：" + err.message, true); } };
-  mk(x.core ? "取消钉住" : "钉住", () => act(() => api("/memories/" + encodeURIComponent(x.id), { method: "PUT", body: { core: !x.core } }), x.core ? "已取消钉住" : "已钉住，它每次聊天都会读到"));
+  const sel = document.createElement("select");
+  sel.setAttribute("aria-label", "分类");
+  sel.innerHTML = ["", ...mem.cats].map((c) => `<option value="${c}">${c || "未分类"}</option>`).join("");
+  sel.value = x.cat;
+  sel.onchange = () => act(() => api(url, { method: "PUT", body: { cat: sel.value } }), "分类改好了");
+  btns.append(sel);
+  mk(x.core ? "取消钉住" : "钉住", () => act(() => api(url, { method: "PUT", body: { core: !x.core } }), x.core ? "已取消钉住" : "已钉住，它每次聊天都会读到"));
   mk("编辑", () => {
     const ta = document.createElement("textarea");
     ta.className = "mem-edit";
     ta.rows = 4;
-    ta.value = x.content; // 编辑原文，保留标签，免得它写的记忆被改成别的来路
+    ta.value = x.content;
     body.replaceWith(ta);
     btns.replaceChildren();
-    mk("保存", () => act(() => api("/memories/" + encodeURIComponent(x.id), { method: "PUT", body: { content: ta.value } }), "已保存"));
+    mk("保存", () => act(() => api(url, { method: "PUT", body: { content: ta.value } }), "已保存"));
     mk("取消", memShow);
     ta.focus();
   });
-  mk("删除", () => { if (confirm("删掉这条记忆？删了就找不回来。")) act(() => api("/memories/" + encodeURIComponent(x.id), { method: "DELETE" }), "已删除"); });
+  mk("删除", () => { if (confirm("删掉这条记忆？删了就找不回来。")) act(() => api(url, { method: "DELETE" }), "已删除"); });
   meta.append(label, btns);
   li.append(body, meta);
   return li;
@@ -1283,7 +1300,7 @@ async function loadMemories() {
   try {
     const d = await api("/memories");
     if (!d.enabled) { memStatus("还没连 Memos，去设置里的「连接」填上。", true); mem.items = []; }
-    else { memStatus(`共 ${d.items.length} 条`); mem.items = d.items; }
+    else { memStatus(`共 ${d.items.length} 条`); mem.items = d.items; mem.cats = d.cats || []; memFilters(); }
   } catch (err) { memStatus("读不到：" + err.message, true); mem.items = []; }
   memShow();
 }
@@ -1298,7 +1315,7 @@ $("mem-add").addEventListener("submit", async (e) => {
   e.preventDefault();
   const v = $("mem-new").value.trim();
   if (!v) return;
-  try { await api("/memories", { method: "POST", body: { content: v } }); $("mem-new").value = ""; await loadMemories(); memStatus("记下了"); } catch (err) { memStatus("没成功：" + err.message, true); }
+  try { await api("/memories", { method: "POST", body: { content: v, cat: $("mem-cat").value } }); $("mem-new").value = ""; await loadMemories(); memStatus("记下了"); } catch (err) { memStatus("没成功：" + err.message, true); }
 });
 
 // ---- 通话 ----
