@@ -6,7 +6,7 @@ const els = {
 };
 
 const MAX_IMAGES = 4;
-const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null, tts: false, call: false };
+const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null, tts: false, call: false, memory: false };
 
 async function api(path, opts = {}) {
   const res = await fetch("/api" + path, {
@@ -197,7 +197,11 @@ async function loadThread() {
   $("tab-radio").hidden = !state.tts;
   $("tab-call").hidden = !data.call;
   state.call = Boolean(data.call);
+  state.memory = Boolean(data.memory);
+  $("tab-memory").hidden = !state.memory;
+  showSince(data.since);
   if (location.hash === "#radio") setPage("radio");
+  if (location.hash === "#memory") setPage("memory");
   els.model.value = data.conversation.model;
   state.hasMore = data.hasMore;
   if (!data.messages.length) return showEmpty();
@@ -960,6 +964,9 @@ async function refreshFlags() {
   state.call = Boolean(d.call);
   $("tab-radio").hidden = !state.tts;
   $("tab-call").hidden = !state.call;
+  state.memory = Boolean(d.memory);
+  $("tab-memory").hidden = !state.memory;
+  showSince(d.since);
 }
 
 // ---- 电台页 ----
@@ -1201,9 +1208,9 @@ document.addEventListener("keydown", (e) => {
 })();
 
 // ---- 页面切换：对话 / 电台 / 棋盘 ----
-const PAGES = { chat: "Claude", radio: "电台", call: "通话", board: "棋盘" };
+const PAGES = { chat: "Claude", radio: "电台", call: "通话", memory: "记忆", board: "棋盘" };
 function setPage(p) {
-  if (!PAGES[p] || (p === "radio" && !state.tts) || (p === "call" && !state.call)) p = "chat";
+  if (!PAGES[p] || (p === "radio" && !state.tts) || (p === "call" && !state.call) || (p === "memory" && !state.memory)) p = "chat";
   if (p !== "call" && call.on) hangUp();
   document.body.dataset.page = p;
   $("title").textContent = PAGES[p];
@@ -1212,11 +1219,87 @@ function setPage(p) {
   $("game").hidden = !game.open;
   $("radio").hidden = p !== "radio";
   $("call").hidden = p !== "call";
+  $("memory").hidden = p !== "memory";
+  if (p === "memory") loadMemories();
   if (game.open) gameLoad();
   if (p === "radio") loadEpisodes();
   if (p === "chat") scrollDown(true);
   history.replaceState(null, "", p === "chat" ? location.pathname : "#" + p);
 }
+
+// ---- 认识第 N 天 ----
+function showSince(since) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(since || "");
+  const el = $("since");
+  if (!m) { el.hidden = true; return; }
+  const now = new Date();
+  const days = Math.round((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(+m[1], +m[2] - 1, +m[3])) / 864e5) + 1;
+  el.textContent = days >= 1 ? `DAY ${days}` : "";
+  el.hidden = days < 1;
+}
+
+// ---- 记忆页 ----
+const mem = { items: [], filter: "all" };
+function memStatus(text, bad = false) { setStatus("mem-status", text, bad); }
+function memShow() {
+  const list = $("mem-list");
+  const rows = mem.items.filter((x) => mem.filter === "all" || (mem.filter === "core" && x.core) || (mem.filter === "claude" && x.claude) || (mem.filter === "mine" && !x.claude));
+  list.replaceChildren(...rows.map(memRow));
+  if (!rows.length) { const li = document.createElement("li"); li.textContent = "这里还没有东西"; li.className = "mem-body"; list.append(li); }
+}
+function memRow(x) {
+  const li = document.createElement("li");
+  li.dataset.core = x.core ? "1" : "";
+  const body = document.createElement("div");
+  body.className = "mem-body";
+  const plain = (t) => t.replace(/(^|\s)#(core|claude)(?=\s|$)/g, "$1").trim();
+  body.textContent = plain(x.content);
+  const meta = document.createElement("div");
+  meta.className = "mem-meta";
+  const label = document.createElement("span");
+  label.textContent = x.createTime.slice(0, 10) + (x.claude ? " · 它写的" : "") + (x.core ? " · 钉住" : "");
+  const btns = document.createElement("span");
+  btns.className = "mem-btns";
+  const mk = (t, fn) => { const b = document.createElement("button"); b.type = "button"; b.textContent = t; b.onclick = fn; btns.append(b); return b; };
+  const act = async (fn, ok) => { try { await fn(); await loadMemories(); memStatus(ok); } catch (err) { memStatus("没成功：" + err.message, true); } };
+  mk(x.core ? "取消钉住" : "钉住", () => act(() => api("/memories/" + encodeURIComponent(x.id), { method: "PUT", body: { core: !x.core } }), x.core ? "已取消钉住" : "已钉住，它每次聊天都会读到"));
+  mk("编辑", () => {
+    const ta = document.createElement("textarea");
+    ta.className = "mem-edit";
+    ta.rows = 4;
+    ta.value = x.content; // 编辑原文，保留标签，免得它写的记忆被改成别的来路
+    body.replaceWith(ta);
+    btns.replaceChildren();
+    mk("保存", () => act(() => api("/memories/" + encodeURIComponent(x.id), { method: "PUT", body: { content: ta.value } }), "已保存"));
+    mk("取消", memShow);
+    ta.focus();
+  });
+  mk("删除", () => { if (confirm("删掉这条记忆？删了就找不回来。")) act(() => api("/memories/" + encodeURIComponent(x.id), { method: "DELETE" }), "已删除"); });
+  meta.append(label, btns);
+  li.append(body, meta);
+  return li;
+}
+async function loadMemories() {
+  try {
+    const d = await api("/memories");
+    if (!d.enabled) { memStatus("还没连 Memos，去设置里的「连接」填上。", true); mem.items = []; }
+    else { memStatus(`共 ${d.items.length} 条`); mem.items = d.items; }
+  } catch (err) { memStatus("读不到：" + err.message, true); mem.items = []; }
+  memShow();
+}
+$("mem-filter").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  mem.filter = b.dataset.f;
+  for (const x of $("mem-filter").children) x.setAttribute("aria-current", String(x === b));
+  memShow();
+});
+$("mem-add").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const v = $("mem-new").value.trim();
+  if (!v) return;
+  try { await api("/memories", { method: "POST", body: { content: v } }); $("mem-new").value = ""; await loadMemories(); memStatus("记下了"); } catch (err) { memStatus("没成功：" + err.message, true); }
+});
 
 // ---- 通话 ----
 // 流程：接通（点一下，拿麦克风、解锁播放）→ 它先开口 → 听你说（检测到停顿就收尾）→ 上传识别 → 它回 → 播放 → 再听
@@ -1387,7 +1470,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => setPage(b.dataset.page)));
 document.body.dataset.page = "chat";
 const startPage = location.hash.slice(1);
-if (startPage === "board") setPage("board"); // 电台要等知道语音有没有开，loadThread 之后再切
+if (startPage === "board") setPage("board");
 
 
 // ---- 待确认的操作（Claude 起草的私信等）：她点了才真执行 ----

@@ -11,7 +11,7 @@ import { buildHistory, buildSystem, DEFAULT_WINDOW, maybeSummarize, stripToolMar
 import { isImageName, readImage, saveImage } from "./uploads.ts";
 import { DEFAULT_SYSTEM } from "./persona.ts";
 import { wereadStatus } from "./weread.ts";
-import { memosStatus } from "./memos.ts";
+import { addMemory, deleteMemory, listMemories, memosEnabled, memosStatus, pinMemory, updateMemory } from "./memos.ts";
 import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
@@ -203,6 +203,26 @@ app.get("/api/device/status", (c) => {
 });
 
 app.get("/api/memory/status", async (c) => c.json(await memosStatus()));
+// 记忆页：直接读写 Memos
+const memErr = (c: Context, err: unknown) => c.json({ error: (err as Error).message }, 400);
+app.get("/api/memories", async (c) => {
+  if (!memosEnabled) return c.json({ enabled: false, items: [] });
+  try { return c.json({ enabled: true, items: await listMemories() }); } catch (err) { return memErr(c, err); }
+});
+app.post("/api/memories", async (c) => {
+  try { await addMemory(String((await c.req.json()).content ?? "")); return c.json({ ok: true }); } catch (err) { return memErr(c, err); }
+});
+app.put("/api/memories/:id", async (c) => {
+  try {
+    const b = await c.req.json();
+    if (typeof b.core === "boolean") await pinMemory(c.req.param("id"), b.core);
+    else await updateMemory(c.req.param("id"), String(b.content ?? ""));
+    return c.json({ ok: true });
+  } catch (err) { return memErr(c, err); }
+});
+app.delete("/api/memories/:id", async (c) => {
+  try { await deleteMemory(c.req.param("id")); return c.json({ ok: true }); } catch (err) { return memErr(c, err); }
+});
 app.get("/api/weread/status", async (c) => c.json(await wereadStatus()));
 
 app.get("/api/models", (c) => c.json({ models: MODELS, default: DEFAULT_MODEL }));
@@ -216,8 +236,9 @@ const windowPreset = () => {
 
 app.get("/api/settings", (c) => c.json({ system_prompt: persona(), window_preset: windowPreset() }));
 app.put("/api/settings", async (c) => {
-  const body = await c.req.json<{ system_prompt?: string; window_preset?: string }>();
+  const body = await c.req.json<{ system_prompt?: string; window_preset?: string; since?: string }>();
   db.setSetting("system_prompt", String(body.system_prompt ?? ""));
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(body.since ?? ""))) db.setSetting("since", body.since!);
   if (body.window_preset && body.window_preset in WINDOW_PRESETS) db.setSetting("window_preset", body.window_preset);
   return c.json({ ok: true });
 });
@@ -233,6 +254,8 @@ app.get("/api/thread", (c) => {
     conversation: { id: conv.id, model: conv.model },
     tts: ttsEnabled,
     call: callEnabled(),
+    memory: memosEnabled,
+    since: db.getSetting("since") || "2026-09-28",
     ...db.messagePage(conv.id, before, limit),
   });
 });

@@ -94,3 +94,44 @@ export async function coreMemories(): Promise<string> {
   const core = (await allMemos()).filter((m) => /(^|\s)#core(\s|$)/.test(m.content));
   return core.map((m) => m.content.replace(/(^|\s)#core(?=\s|$)/g, "").trim()).join("\n---\n");
 }
+
+// ---- 记忆页：她在网页上直接看、改、删、钉住 ----
+export interface MemoryItem { id: string; content: string; createTime: string; core: boolean; claude: boolean }
+
+const CORE_RE = /(^|\s)#core(?=\s|$)/;
+const idOf = (name: string) => name.replace(/^memos\//, "");
+const check = (id: string) => { if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) throw new Error("记忆编号不对"); return id; };
+
+export async function listMemories(): Promise<MemoryItem[]> {
+  cache = null; // 页面要看最新的
+  return (await allMemos())
+    .map((m) => ({ id: idOf(m.name), content: m.content, createTime: m.createTime, core: CORE_RE.test(m.content), claude: /(^|\s)#claude(?=\s|$)/.test(m.content) }))
+    .sort((a, b) => b.createTime.localeCompare(a.createTime));
+}
+
+export async function addMemory(content: string): Promise<void> {
+  const text = content.trim();
+  if (!text) throw new Error("内容是空的");
+  await memosFetch("/api/v1/memos", { method: "POST", body: JSON.stringify({ content: text, visibility: "PRIVATE" }) });
+  cache = null;
+}
+
+export async function updateMemory(id: string, content: string): Promise<void> {
+  const text = content.trim();
+  if (!text) throw new Error("内容是空的，要删就点删除");
+  await memosFetch(`/api/v1/memos/${check(id)}?updateMask=content`, { method: "PATCH", body: JSON.stringify({ content: text }) });
+  cache = null;
+}
+
+export async function deleteMemory(id: string): Promise<void> {
+  await memosFetch(`/api/v1/memos/${check(id)}`, { method: "DELETE" });
+  cache = null;
+}
+
+/** 钉住 = 给笔记加/去掉 #core 标签（每次对话自动读进去） */
+export async function pinMemory(id: string, on: boolean): Promise<void> {
+  const m = (await listMemories()).find((x) => x.id === check(id));
+  if (!m) throw new Error("找不到这条记忆");
+  const stripped = m.content.replace(/(^|\s)#core(?=\s|$)/g, "$1").replace(/[ \t]+\n/g, "\n").trim();
+  await updateMemory(id, on ? `${stripped}\n\n#core` : stripped);
+}

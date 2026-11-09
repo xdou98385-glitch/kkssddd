@@ -18,7 +18,7 @@
   <main>
     <header>
       <span class="spacer"></span>
-      <h1 id="title">Claude</h1>
+      <div class="titlebox"><h1 id="title">Claude</h1><small id="since" hidden></small></div>
       <button id="settings-btn" class="round" type="button" aria-label="设置">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
       </button>
@@ -69,6 +69,21 @@
       <p id="call-note" class="memory-status"></p>
     </section>
 
+    <section id="memory" hidden aria-label="记忆">
+      <form id="mem-add">
+        <textarea id="mem-new" rows="2" maxlength="2000" placeholder="想让它记住什么（可空）"></textarea>
+        <button type="submit">记下</button>
+      </form>
+      <div id="mem-filter" role="tablist">
+        <button type="button" data-f="all" aria-current="true">全部</button>
+        <button type="button" data-f="core">钉住的</button>
+        <button type="button" data-f="claude">它写的</button>
+        <button type="button" data-f="mine">我写的</button>
+      </div>
+      <p id="mem-status" class="memory-status"></p>
+      <ol id="mem-list"></ol>
+    </section>
+
     <div id="pending"></div>
     <div id="attachments"></div>
     <form id="composer">
@@ -87,6 +102,7 @@
       <button type="button" data-page="chat" aria-current="true">对话</button>
       <button type="button" data-page="radio" id="tab-radio" hidden>电台</button>
       <button type="button" data-page="call" id="tab-call" hidden>通话</button>
+      <button type="button" data-page="memory" id="tab-memory" hidden>记忆</button>
       <button type="button" data-page="board">棋盘</button>
     </nav>
   </main>
