@@ -29,7 +29,8 @@
       <div class="skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
     </div>
 
-    <section id="game" hidden aria-label="数独">
+    <section id="game" hidden aria-label="游戏">
+      <div id="game-pick" role="tablist"><button type="button" data-g="sudoku" aria-current="true">数独</button></div>
       <div class="game-top">
         <span id="game-meta"></span>
         <span class="game-actions">
@@ -110,7 +111,7 @@
       <button type="button" data-en="call" data-page="call" id="tab-call" hidden>通话</button>
       <button type="button" data-en="memory" data-page="memory" id="tab-memory" hidden>记忆</button>
       <button type="button" data-en="letters" data-page="letters" id="tab-letters" hidden>信箱</button>
-      <button type="button" data-en="board" data-page="board">棋盘</button>
+      <button type="button" data-en="games" data-page="board">游戏</button>
     </nav>
   </main>
 

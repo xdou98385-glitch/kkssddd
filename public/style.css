@@ -395,7 +395,7 @@ html[data-theme="term"] body[data-page="radio"] header h1::before { content: "cl
 html[data-theme="term"] body[data-page="call"] header h1::before { content: "claude@kay:~/call ▾"; }
 html[data-theme="term"] body[data-page="memory"] header h1::before { content: "claude@kay:~/memory ▾"; }
 html[data-theme="term"] body[data-page="letters"] header h1::before { content: "claude@kay:~/letters ▾"; }
-html[data-theme="term"] body[data-page="board"] header h1::before { content: "claude@kay:~/board ▾"; }
+html[data-theme="term"] body[data-page="board"] header h1::before { content: "claude@kay:~/games ▾"; }
 html[data-theme="term"] #since { margin-top: 6px; letter-spacing: 0.06em; }
 html[data-theme="term"] header .spacer { display: none; }
 html[data-theme="term"] .round { width: 34px; height: 34px; border-color: var(--hairline); }
@@ -444,3 +444,10 @@ html[data-theme="term"] #mem-list li[data-core="1"] { border-color: var(--acc); 
 html[data-theme="term"] .conn-state.on::before { border-radius: 0; background: var(--acc); }
 html[data-theme="term"] #board { border-radius: 2px; }
 html[data-theme="term"] :is(#memory, #letters, #radio) { padding-top: 16px; }
+
+/* 游戏页顶部的游戏选择，以后加五子棋之类就在这一排多一个按钮 */
+#game-pick { display: flex; gap: 6px; margin: 0 20px 10px; flex-wrap: wrap; }
+#game-pick button { padding: 5px 14px; border-radius: 999px; background: transparent; border: 1px solid var(--hairline); color: var(--muted); font: 12.5px/1.4 var(--sans); letter-spacing: 0.1em; }
+#game-pick button[aria-current="true"] { color: var(--text); border-color: var(--muted); }
+html[data-theme="term"] #game-pick button { border-radius: 2px; }
+html[data-theme="term"] #game-pick button[aria-current="true"] { color: var(--acc); border-color: var(--acc); }
