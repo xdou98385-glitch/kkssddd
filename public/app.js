@@ -6,7 +6,7 @@ const els = {
 };
 
 const MAX_IMAGES = 4;
-const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null, tts: false, call: false, memory: false };
+const state = { busy: false, abort: null, hasMore: false, firstId: null, lastDay: null, loadingMore: false, pending: [], stick: true, lastId: null, tts: false, call: false, memory: false, letter: false };
 
 async function api(path, opts = {}) {
   const res = await fetch("/api" + path, {
@@ -199,9 +199,12 @@ async function loadThread() {
   state.call = Boolean(data.call);
   state.memory = Boolean(data.memory);
   $("tab-memory").hidden = !state.memory;
+  state.letter = Boolean(data.letter);
+  $("tab-letters").hidden = !state.letter;
   showSince(data.since);
   if (location.hash === "#radio") setPage("radio");
   if (location.hash === "#memory") setPage("memory");
+  if (location.hash === "#letters") setPage("letters");
   els.model.value = data.conversation.model;
   state.hasMore = data.hasMore;
   if (!data.messages.length) return showEmpty();
@@ -966,6 +969,8 @@ async function refreshFlags() {
   $("tab-call").hidden = !state.call;
   state.memory = Boolean(d.memory);
   $("tab-memory").hidden = !state.memory;
+  state.letter = Boolean(d.letter);
+  $("tab-letters").hidden = !state.letter;
   showSince(d.since);
 }
 
@@ -1208,9 +1213,9 @@ document.addEventListener("keydown", (e) => {
 })();
 
 // ---- 页面切换：对话 / 电台 / 棋盘 ----
-const PAGES = { chat: "Claude", radio: "电台", call: "通话", memory: "记忆", board: "棋盘" };
+const PAGES = { chat: "Claude", radio: "电台", call: "通话", memory: "记忆", letters: "信箱", board: "棋盘" };
 function setPage(p) {
-  if (!PAGES[p] || (p === "radio" && !state.tts) || (p === "call" && !state.call) || (p === "memory" && !state.memory)) p = "chat";
+  if (!PAGES[p] || (p === "radio" && !state.tts) || (p === "call" && !state.call) || (p === "memory" && !state.memory) || (p === "letters" && !state.letter)) p = "chat";
   if (p !== "call" && call.on) hangUp();
   document.body.dataset.page = p;
   $("title").textContent = PAGES[p];
@@ -1220,7 +1225,9 @@ function setPage(p) {
   $("radio").hidden = p !== "radio";
   $("call").hidden = p !== "call";
   $("memory").hidden = p !== "memory";
+  $("letters").hidden = p !== "letters";
   if (p === "memory") loadMemories();
+  if (p === "letters") loadLetters();
   if (game.open) gameLoad();
   if (p === "radio") loadEpisodes();
   if (p === "chat") scrollDown(true);
@@ -1317,6 +1324,60 @@ $("mem-add").addEventListener("submit", async (e) => {
   if (!v) return;
   try { await api("/memories", { method: "POST", body: { content: v, cat: $("mem-cat").value } }); $("mem-new").value = ""; await loadMemories(); memStatus("记下了"); } catch (err) { memStatus("没成功：" + err.message, true); }
 });
+
+// ---- 信箱 ----
+const lt = { open: new Set(), timer: null, mail: false };
+const ltNote = (t, bad = false) => setStatus("lt-note", t, bad);
+function ltRender(list) {
+  const ol = $("lt-list");
+  if (!list.length) { ol.innerHTML = ""; const li = document.createElement("li"); li.className = "lt-body"; li.textContent = "还没有信。打开上面的开关，月底它会写；也可以现在写一封试试。"; ol.append(li); return; }
+  ol.replaceChildren(...list.map((l) => {
+    const li = document.createElement("li");
+    const head = document.createElement("div");
+    head.className = "lt-head";
+    const t = document.createElement("span");
+    t.className = "lt-title";
+    t.textContent = l.status === "writing" ? "正在写…" : l.status === "failed" ? "没写成" : l.title;
+    const m = document.createElement("span");
+    m.className = "lt-meta";
+    m.textContent = new Date(l.created_at).toISOString().slice(0, 10);
+    head.append(t, m);
+    li.append(head);
+    if (l.status === "failed") { const p = document.createElement("div"); p.className = "lt-sub"; p.textContent = l.error || ""; li.append(p); }
+    if (l.status === "ready" && lt.open.has(l.id)) {
+      const b = document.createElement("div"); b.className = "lt-body"; b.textContent = l.body; li.append(b);
+      const sub = document.createElement("div"); sub.className = "lt-sub";
+      sub.append(l.emailed_at ? "已发到邮箱" : l.email_error ? "邮件没发出去：" + l.email_error : "没发邮件");
+      if (lt.mail && !l.emailed_at) {
+        const bt = document.createElement("button"); bt.type = "button"; bt.textContent = "发到邮箱";
+        bt.onclick = async () => { bt.disabled = true; try { const r = await api("/letters/" + l.id + "/email", { method: "POST" }); ltNote(r.ok ? "已发到邮箱" : r.error || "没发出去", !r.ok); } catch (err) { ltNote(err.message, true); } loadLetters(); };
+        sub.append(bt);
+      }
+      li.append(sub);
+    }
+    if (l.status === "ready") head.onclick = () => { lt.open.has(l.id) ? lt.open.delete(l.id) : lt.open.add(l.id); ltRender(lt.list); };
+    return li;
+  }));
+}
+async function loadLetters() {
+  clearTimeout(lt.timer);
+  try {
+    const d = await api("/letters");
+    lt.list = d.letters; lt.mail = d.mail;
+    $("lt-on").checked = d.config.enabled;
+    $("lt-mail").checked = d.config.email;
+    $("lt-mail").disabled = !d.mail;
+    if (!d.mail) ltNote("邮箱还没连（设置 → 连接 → 邮箱），信只放在这里");
+    ltRender(d.letters);
+    if (d.letters.some((l) => l.status === "writing")) { ltNote("正在写，要一两分钟…"); lt.timer = setTimeout(loadLetters, 4000); }
+    else if ($("lt-note").textContent.startsWith("正在写")) ltNote("");
+  } catch (err) { ltNote("读不到：" + err.message, true); }
+}
+$("lt-on").onchange = () => api("/letters/config", { method: "PUT", body: { enabled: $("lt-on").checked } }).then(() => { state.letter = true; $("tab-letters").hidden = false; ltNote($("lt-on").checked ? "开了：每月最后一天 21:00 以后写" : "关了"); }).catch((e) => ltNote(e.message, true));
+$("lt-mail").onchange = () => api("/letters/config", { method: "PUT", body: { email: $("lt-mail").checked } }).catch((e) => ltNote(e.message, true));
+$("lt-now").onclick = async () => {
+  try { await api("/letters/write", { method: "POST" }); loadLetters(); } catch (err) { ltNote(err.message, true); }
+};
 
 // ---- 通话 ----
 // 流程：接通（点一下，拿麦克风、解锁播放）→ 它先开口 → 听你说（检测到停顿就收尾）→ 上传识别 → 它回 → 播放 → 再听

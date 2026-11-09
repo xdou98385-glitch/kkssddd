@@ -80,6 +80,15 @@
       <ol id="mem-list"></ol>
     </section>
 
+    <section id="letters" hidden aria-label="信箱">
+      <div class="letter-opts">
+        <label><input type="checkbox" id="lt-on"> 每月最后一天晚上写一封</label>
+        <label><input type="checkbox" id="lt-mail"> 同时发到我的邮箱</label>
+      </div>
+      <div class="radio-make"><span id="lt-note" class="memory-status"></span><button id="lt-now" type="button">现在写一封</button></div>
+      <ol id="lt-list"></ol>
+    </section>
+
     <div id="pending"></div>
     <div id="attachments"></div>
     <form id="composer">
@@ -99,6 +108,7 @@
       <button type="button" data-page="radio" id="tab-radio" hidden>电台</button>
       <button type="button" data-page="call" id="tab-call" hidden>通话</button>
       <button type="button" data-page="memory" id="tab-memory" hidden>记忆</button>
+      <button type="button" data-page="letters" id="tab-letters" hidden>信箱</button>
       <button type="button" data-page="board">棋盘</button>
     </nav>
   </main>

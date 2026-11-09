@@ -20,6 +20,7 @@ import { startSchedulerTick } from "./scheduler.ts";
 import { latestBackupPath, listBackups, runBackup, startBackups } from "./backup.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { startPodcast } from "./podcast.ts";
+import { emailLetter, getLetterCfg, setLetterCfg, startLetter } from "./letter.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
 import { xhsQrcode, xhsStatus } from "./xhs.ts";
 import { recordShare } from "./share.ts";
@@ -27,7 +28,7 @@ import { douyinProbe, douyinStatus, runPending } from "./douyin.ts";
 import { musicStatus } from "./music.ts";
 import { weatherStatus } from "./weather.ts";
 import { calendarStatus } from "./calendar.ts";
-import { mailStatus } from "./mail.ts";
+import { mailEnabled, mailStatus } from "./mail.ts";
 import { xStatus } from "./twitter.ts";
 import { startTaobao, taobaoStatus } from "./taobao.ts";
 import { gate } from "./lock.ts";
@@ -254,6 +255,7 @@ app.get("/api/thread", (c) => {
     tts: ttsEnabled,
     call: callEnabled(),
     memory: memosEnabled,
+    letter: true,
     since: db.getSetting("since") || "2026-09-28",
     ...db.messagePage(conv.id, before, limit),
   });
@@ -356,6 +358,12 @@ app.post("/api/thread/regenerate", (c) => {
 });
 
 app.get("/api/podcasts", async (c) => c.json({ episodes: db.listEpisodes(40).map(({ en: _en, ...e }) => e), quota: await elevenQuota() }));
+
+// ---- 信箱（每月一封信）----
+app.get("/api/letters", (c) => c.json({ letters: db.listLetters(60), config: getLetterCfg(), mail: mailEnabled }));
+app.put("/api/letters/config", async (c) => { const b = await c.req.json(); return c.json({ config: setLetterCfg({ enabled: b.enabled, email: b.email }) }); });
+app.post("/api/letters/write", (c) => { const r = startLetter(); return "error" in r ? c.json(r, 409) : c.json(r); });
+app.post("/api/letters/:id/email", async (c) => { await emailLetter(Number(c.req.param("id"))); const l = db.getLetter(Number(c.req.param("id"))); return c.json({ ok: Boolean(l?.emailed_at), error: l?.email_error ?? null }); });
 
 // ---- 待她确认的操作（比如 Claude 起草的抖音私信）----
 app.get("/api/actions", (c) => c.json({ actions: db.listPending().map((a) => ({ id: a.id, summary: a.summary })) }));

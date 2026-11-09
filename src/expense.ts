@@ -22,7 +22,7 @@ function parts(ms: number) {
 }
 export const localDayStart = (ms: number) => { const p = parts(ms); return ms - (p.h * 60 + p.mi) * 60_000 - (ms % 60_000); };
 const dayKey = (ms: number) => { const p = parts(ms); return `${p.y}-${String(p.mo).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`; };
-const monthStart = (ms: number) => { const p = parts(ms); return localDayStart(ms) - (p.d - 1) * 86400_000; };
+export const monthStart = (ms: number) => { const p = parts(ms); return localDayStart(ms) - (p.d - 1) * 86400_000; };
 const daysInMonth = (ms: number) => { const p = parts(ms); return new Date(Date.UTC(p.y, p.mo, 0)).getUTCDate(); };
 
 export function expenseAdd(a: { amount: number; currency: string; category: string; merchant: string; note: string; days_ago: number }, source = "chat"): string {

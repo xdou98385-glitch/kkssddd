@@ -124,7 +124,19 @@ db.exec(`
     error TEXT,
     created_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS letters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    month TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    error TEXT,
+    emailed_at INTEGER,
+    email_error TEXT,
+    created_at INTEGER NOT NULL
+  );
 `);
+db.prepare("UPDATE letters SET status = 'failed', error = '服务重启，这封没写完' WHERE status = 'writing'").run();
 // 上次进程被重启时还没写完的电台节目，标成失败，免得一直转圈
 db.prepare("UPDATE episodes SET status = 'failed', error = '服务重启，这期没做完' WHERE status IN ('writing', 'voicing')").run();
 ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的；'podcast' = 她点「来一期」生成的微播客
@@ -408,6 +420,18 @@ export function updateEpisode(id: number, f: Partial<Omit<Episode, "id" | "creat
 }
 export const getEpisode = (id: number) => db.prepare("SELECT * FROM episodes WHERE id = ?").get(id) as Episode | undefined;
 export const listEpisodes = (limit: number) => db.prepare("SELECT * FROM episodes ORDER BY id DESC LIMIT ?").all(limit) as unknown as Episode[];
+
+// ---- 每月一封信 ----
+export interface Letter { id: number; month: string; title: string; body: string; status: "writing" | "ready" | "failed"; error: string | null; emailed_at: number | null; email_error: string | null; created_at: number }
+export const createLetter = (month: string): number => Number(db.prepare("INSERT INTO letters (month, status, created_at) VALUES (?, 'writing', ?)").run(month, now()).lastInsertRowid);
+export function updateLetter(id: number, f: Partial<Omit<Letter, "id" | "created_at">>): void {
+  const keys = Object.keys(f) as (keyof typeof f)[];
+  if (!keys.length) return;
+  db.prepare(`UPDATE letters SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => f[k] ?? null), id);
+}
+export const getLetter = (id: number) => db.prepare("SELECT * FROM letters WHERE id = ?").get(id) as Letter | undefined;
+export const listLetters = (limit: number) => db.prepare("SELECT * FROM letters ORDER BY id DESC LIMIT ?").all(limit) as unknown as Letter[];
+export const countUserMessagesSince = (since: number) => Number((db.prepare("SELECT COUNT(*) AS n FROM messages WHERE role = 'user' AND created_at >= ?").get(since) as { n: number }).n);
 
 /** 她最后一条消息之后，Claude 连着发了几条她还没回的主动消息，以及最后一条是什么时候 */
 export function trailingProactive(conversationId: string): { count: number; lastAt: number } {
