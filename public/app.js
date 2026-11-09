@@ -1214,7 +1214,11 @@ document.addEventListener("keydown", (e) => {
 
 // ---- 页面切换：对话 / 电台 / 棋盘 ----
 const PAGES = { chat: "Claude", radio: "电台", call: "通话", memory: "记忆", letters: "信箱", board: "棋盘" };
+// 终端主题：点标题弹出目录。原来的主题用底部标签栏，这个点击不起作用
+$("menu-btn").addEventListener("click", (e) => { if (document.documentElement.dataset.theme !== "term") return; e.stopPropagation(); document.body.classList.toggle("menu-open"); });
+document.addEventListener("click", (e) => { if (!e.target.closest("#tabs")) document.body.classList.remove("menu-open"); });
 function setPage(p) {
+  document.body.classList.remove("menu-open");
   if (!PAGES[p] || (p === "radio" && !state.tts) || (p === "call" && !state.call) || (p === "memory" && !state.memory) || (p === "letters" && !state.letter)) p = "chat";
   if (p !== "call" && call.on) hangUp();
   document.body.dataset.page = p;
@@ -1543,6 +1547,14 @@ $("call-sub-toggle").onclick = () => {
   $("call-sub-toggle").textContent = "字幕：" + (call.subs ? "开" : "关");
 };
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && call.on) hangUp(); });
+
+const themeSel = $("theme");
+themeSel.value = document.documentElement.dataset.theme === "classic" ? "classic" : "term";
+themeSel.onchange = () => {
+  try { localStorage.setItem("theme", themeSel.value); } catch { /* 存不了就只对这次有效 */ }
+  document.documentElement.dataset.theme = themeSel.value;
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m, i) => m.setAttribute("content", themeSel.value === "term" ? "#0c1116" : i ? "#121314" : "#efefed"));
+};
 
 // ---- 启动：标签页点击、初始页面（要放在最后，前面的东西都定义好了）----
 document.querySelectorAll("#tabs button").forEach((b) => (b.onclick = () => setPage(b.dataset.page)));

@@ -11,6 +11,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/icon-180.png">
   <link rel="icon" href="/icon-192.png">
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css">
   <title>Chat</title>
 </head>
@@ -18,7 +19,7 @@
   <main>
     <header>
       <span class="spacer"></span>
-      <div class="titlebox"><h1 id="title">Claude</h1><small id="since" hidden></small></div>
+      <div class="titlebox" id="menu-btn" role="button" aria-label="页面菜单"><h1 id="title">Claude</h1><small id="since" hidden></small></div>
       <button id="settings-btn" class="round" type="button" aria-label="设置">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
       </button>
@@ -104,12 +105,12 @@
     </form>
 
     <nav id="tabs" aria-label="页面">
-      <button type="button" data-page="chat" aria-current="true">对话</button>
-      <button type="button" data-page="radio" id="tab-radio" hidden>电台</button>
-      <button type="button" data-page="call" id="tab-call" hidden>通话</button>
-      <button type="button" data-page="memory" id="tab-memory" hidden>记忆</button>
-      <button type="button" data-page="letters" id="tab-letters" hidden>信箱</button>
-      <button type="button" data-page="board">棋盘</button>
+      <button type="button" data-en="chat" data-page="chat" aria-current="true">对话</button>
+      <button type="button" data-en="radio" data-page="radio" id="tab-radio" hidden>电台</button>
+      <button type="button" data-en="call" data-page="call" id="tab-call" hidden>通话</button>
+      <button type="button" data-en="memory" data-page="memory" id="tab-memory" hidden>记忆</button>
+      <button type="button" data-en="letters" data-page="letters" id="tab-letters" hidden>信箱</button>
+      <button type="button" data-en="board" data-page="board">棋盘</button>
     </nav>
   </main>
 
@@ -124,6 +125,9 @@
       </div>
       <div class="set-body">
         <div class="set-panel" data-panel="chat">
+          <label class="field"><span>外观</span>
+            <select id="theme"><option value="term">终端（深蓝，等宽）</option><option value="classic">原来的样子</option></select>
+          </label>
           <label class="field"><span>模型</span>
             <select id="model"></select>
           </label>
