@@ -42,8 +42,104 @@ db.exec(`
     detail TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
+  CREATE TABLE IF NOT EXISTS scheduled (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    due_at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    text TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+  );
+  CREATE INDEX IF NOT EXISTS idx_scheduled_due ON scheduled(status, due_at);
+  CREATE TABLE IF NOT EXISTS app_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    app TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    start TEXT NOT NULL DEFAULT '',
+    end TEXT NOT NULL DEFAULT '',
+    limit_min INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER NOT NULL DEFAULT 0,
+    note TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS wishlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    spec TEXT NOT NULL DEFAULT '',
+    target_cents INTEGER NOT NULL DEFAULT 0,
+    price_cents INTEGER NOT NULL DEFAULT 0,
+    link TEXT NOT NULL DEFAULT '',
+    priority INTEGER NOT NULL DEFAULT 2,
+    status TEXT NOT NULL DEFAULT 'want',
+    note TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    amount_minor INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    merchant TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL DEFAULT 'chat'
+  );
+  CREATE INDEX IF NOT EXISTS idx_expenses_at ON expenses(at);
+  CREATE TABLE IF NOT EXISTS important_dates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    month INTEGER NOT NULL,
+    day INTEGER NOT NULL,
+    year INTEGER NOT NULL DEFAULT 0,
+    repeat TEXT NOT NULL DEFAULT 'once',
+    remind_days TEXT NOT NULL DEFAULT '7,1',
+    note TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS pending_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+  );
+  CREATE TABLE IF NOT EXISTS shares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    platform TEXT NOT NULL,
+    url TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    meta_title TEXT NOT NULL DEFAULT '',
+    meta_desc TEXT NOT NULL DEFAULT ''
+  );
+  CREATE TABLE IF NOT EXISTS episodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL DEFAULT '',
+    title_en TEXT NOT NULL DEFAULT '',
+    zh TEXT NOT NULL DEFAULT '',
+    en TEXT NOT NULL DEFAULT '',
+    topic TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    error TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS letters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    month TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    error TEXT,
+    emailed_at INTEGER,
+    email_error TEXT,
+    created_at INTEGER NOT NULL
+  );
 `);
-ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的
+db.prepare("UPDATE letters SET status = 'failed', error = '服务重启，这封没写完' WHERE status = 'writing'").run();
+// 上次进程被重启时还没写完的电台节目，标成失败，免得一直转圈
+db.prepare("UPDATE episodes SET status = 'failed', error = '服务重启，这期没做完' WHERE status IN ('writing', 'voicing')").run();
+ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的；'podcast' = 她点「来一期」生成的微播客
 ensureColumn("messages", "tools", "TEXT"); // JSON 数组：这条回复真正调用过的工具名（系统记录，不是模型自己说的）
 ensureColumn("messages", "images", "TEXT"); // JSON 数组：上传图片的文件名
 ensureColumn("conversations", "summary", "TEXT NOT NULL DEFAULT ''"); // 更早对话的摘要
@@ -64,6 +160,7 @@ export interface Message {
   content: string;
   images: string[];
   tools: string[];
+  kind: string | null; // 'proactive' = 主动消息
   created_at: number;
 }
 
@@ -73,6 +170,7 @@ interface MessageRow {
   content: string;
   images: string | null;
   tools: string | null;
+  kind: string | null;
   created_at: number;
 }
 const toMessage = (r: MessageRow): Message => ({
@@ -81,6 +179,7 @@ const toMessage = (r: MessageRow): Message => ({
   content: r.content,
   images: r.images ? JSON.parse(r.images) : [],
   tools: r.tools ? JSON.parse(r.tools) : [],
+  kind: r.kind,
   created_at: r.created_at,
 });
 
@@ -128,7 +227,7 @@ export function messagePage(
 ): { messages: Message[]; hasMore: boolean } {
   const rows = db
     .prepare(
-      `SELECT id, role, content, images, tools, created_at FROM messages
+      `SELECT id, role, content, images, tools, kind, created_at FROM messages
        WHERE conversation_id = ? AND id < ? ORDER BY id DESC LIMIT ?`,
     )
     .all(conversationId, before ?? Number.MAX_SAFE_INTEGER, limit + 1) as unknown as MessageRow[];
@@ -141,7 +240,7 @@ export function windowMessages(conversationId: string, afterId: number): Message
   return (
     db
       .prepare(
-        `SELECT id, role, content, images, tools, created_at FROM messages
+        `SELECT id, role, content, images, tools, kind, created_at FROM messages
          WHERE conversation_id = ? AND id > ? ORDER BY id`,
       )
       .all(conversationId, afterId) as unknown as MessageRow[]
@@ -153,10 +252,10 @@ export function addMessage(
   role: Message["role"],
   content: string,
   images: string[] = [],
-  kind: "proactive" | null = null,
+  kind: "proactive" | "podcast" | "call" | "listen" | "remind" | null = null,
   tools: string[] = [],
-): void {
-  db.prepare(
+): number {
+  const r = db.prepare(
     "INSERT INTO messages (conversation_id, role, content, images, kind, tools, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ).run(
     conversationId,
@@ -168,6 +267,13 @@ export function addMessage(
     now(),
   );
   db.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(now(), conversationId);
+  return Number(r.lastInsertRowid);
+}
+
+/** 一条助手消息的正文（给语音用） */
+export function assistantText(id: number): string | null {
+  const r = db.prepare("SELECT content FROM messages WHERE id = ? AND role = 'assistant'").get(id) as { content: string } | undefined;
+  return r?.content ?? null;
 }
 
 /** 最后一条消息（含是否是主动发的），用来判断要不要再主动开口 */
@@ -177,6 +283,165 @@ export function lastMessage(
   return db
     .prepare("SELECT role, kind, created_at FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 1")
     .get(conversationId) as { role: "user" | "assistant"; kind: string | null; created_at: number } | undefined;
+}
+
+/** 可以重新生成的末尾回复：最后一条是她正常对话里的助手回复，且前一条是她说的话。返回它的 id */
+export function regenerableTail(conversationId: string): number | null {
+  const rows = db
+    .prepare("SELECT id, role, kind FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 2")
+    .all(conversationId) as { id: number; role: string; kind: string | null }[];
+  const [last, prev] = rows;
+  return last && prev && last.role === "assistant" && last.kind === null && prev.role === "user" ? last.id : null;
+}
+
+interface RawMessage {
+  conversation_id: string;
+  role: string;
+  content: string;
+  images: string | null;
+  kind: string | null;
+  tools: string | null;
+  created_at: number;
+}
+
+/** 删掉一条消息并返回原样，重新生成失败时用 restoreMessage 放回去 */
+export function takeMessage(id: number): RawMessage | undefined {
+  const row = db
+    .prepare("SELECT conversation_id, role, content, images, kind, tools, created_at FROM messages WHERE id = ?")
+    .get(id) as RawMessage | undefined;
+  if (row) db.prepare("DELETE FROM messages WHERE id = ?").run(id);
+  return row;
+}
+
+export function restoreMessage(m: RawMessage): void {
+  db.prepare(
+    "INSERT INTO messages (conversation_id, role, content, images, kind, tools, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(m.conversation_id, m.role, m.content, m.images, m.kind, m.tools, m.created_at);
+}
+
+/** 整个库里最新的一条消息（不分对话；只有一条主对话） */
+export function latestMessage(): { role: "user" | "assistant"; created_at: number } | undefined {
+  return db.prepare("SELECT role, created_at FROM messages ORDER BY id DESC LIMIT 1").get() as
+    | { role: "user" | "assistant"; created_at: number }
+    | undefined;
+}
+
+// ---- 她分享给 Claude 的东西（抖音、小红书等的分享文字和链接）----
+export interface Share { id: number; at: number; platform: string; url: string; text: string; meta_title: string; meta_desc: string }
+export function addShare(s: Omit<Share, "id" | "at">): number {
+  return Number(db.prepare("INSERT INTO shares (at, platform, url, text, meta_title, meta_desc) VALUES (?, ?, ?, ?, ?, ?)").run(now(), s.platform, s.url, s.text, s.meta_title, s.meta_desc).lastInsertRowid);
+}
+export const recentShares = (limit: number, since = 0) =>
+  db.prepare("SELECT * FROM shares WHERE at >= ? ORDER BY id DESC LIMIT ?").all(since, limit) as unknown as Share[];
+
+// ---- 提醒和 Claude 给自己约的「找她」----
+export interface Scheduled { id: number; created_at: number; due_at: number; kind: "reminder" | "checkin"; text: string; status: string }
+export const addScheduled = (kind: Scheduled["kind"], dueAt: number, text: string): number =>
+  Number(db.prepare("INSERT INTO scheduled (created_at, due_at, kind, text) VALUES (?, ?, ?, ?)").run(now(), dueAt, kind, text).lastInsertRowid);
+export const listScheduled = () => db.prepare("SELECT * FROM scheduled WHERE status = 'pending' ORDER BY due_at").all() as unknown as Scheduled[];
+export const dueScheduled = (at: number, limit = 3) => db.prepare("SELECT * FROM scheduled WHERE status = 'pending' AND due_at <= ? ORDER BY due_at LIMIT ?").all(at, limit) as unknown as Scheduled[];
+export const getScheduled = (id: number) => db.prepare("SELECT * FROM scheduled WHERE id = ?").get(id) as Scheduled | undefined;
+export const setScheduledStatus = (id: number, status: string) => void db.prepare("UPDATE scheduled SET status = ? WHERE id = ?").run(status, id);
+export const postponeScheduled = (id: number, dueAt: number) => void db.prepare("UPDATE scheduled SET due_at = ? WHERE id = ?").run(dueAt, id);
+
+// ---- 购物清单 ----
+export interface Wish { id: number; created_at: number; updated_at: number; name: string; spec: string; target_cents: number; price_cents: number; link: string; priority: number; status: string; note: string }
+export const addWish = (w: Pick<Wish, "name" | "spec" | "target_cents" | "price_cents" | "link" | "priority" | "note">): number =>
+  Number(db.prepare("INSERT INTO wishlist (created_at, updated_at, name, spec, target_cents, price_cents, link, priority, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(now(), now(), w.name, w.spec, w.target_cents, w.price_cents, w.link, w.priority, w.note).lastInsertRowid);
+export const listWishes = () => db.prepare("SELECT * FROM wishlist WHERE status != 'dropped' ORDER BY priority, id").all() as unknown as Wish[];
+export const getWish = (id: number) => db.prepare("SELECT * FROM wishlist WHERE id = ?").get(id) as unknown as Wish | undefined;
+export function updateWish(id: number, patch: Partial<Omit<Wish, "id" | "created_at">>): void {
+  const keys = Object.keys(patch) as (keyof typeof patch)[];
+  if (!keys.length) return;
+  db.prepare(`UPDATE wishlist SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`).run(...keys.map((k) => patch[k] as string | number), now(), id);
+}
+export const countWishes = () => Number((db.prepare("SELECT COUNT(*) AS n FROM wishlist WHERE status != 'dropped'").get() as { n: number }).n);
+
+// ---- 应用锁规则 ----
+export interface AppRule { id: number; created_at: number; app: string; kind: "window" | "limit" | "until"; start: string; end: string; limit_min: number; expires_at: number; note: string }
+export const addAppRule = (r: Omit<AppRule, "id" | "created_at">): number =>
+  Number(db.prepare("INSERT INTO app_rules (created_at, app, kind, start, end, limit_min, expires_at, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(now(), r.app, r.kind, r.start, r.end, r.limit_min, r.expires_at, r.note).lastInsertRowid);
+export const listAppRules = () => db.prepare("SELECT * FROM app_rules ORDER BY id").all() as unknown as AppRule[];
+export const deleteAppRule = (id: number) => Number(db.prepare("DELETE FROM app_rules WHERE id = ?").run(id).changes);
+export const purgeExpiredAppRules = (at: number) => void db.prepare("DELETE FROM app_rules WHERE expires_at > 0 AND expires_at <= ?").run(at);
+
+// ---- 记账 ----
+export interface Expense { id: number; at: number; amount_minor: number; currency: string; category: string; merchant: string; note: string; source: string }
+export const addExpense = (e: Omit<Expense, "id">): number =>
+  Number(db.prepare("INSERT INTO expenses (at, amount_minor, currency, category, merchant, note, source) VALUES (?, ?, ?, ?, ?, ?, ?)").run(e.at, e.amount_minor, e.currency, e.category, e.merchant, e.note, e.source).lastInsertRowid);
+export const expensesBetween = (from: number, to: number) => db.prepare("SELECT * FROM expenses WHERE at >= ? AND at < ? ORDER BY at").all(from, to) as unknown as Expense[];
+export const getExpense = (id: number) => db.prepare("SELECT * FROM expenses WHERE id = ?").get(id) as unknown as Expense | undefined;
+export const deleteExpense = (id: number) => Number(db.prepare("DELETE FROM expenses WHERE id = ?").run(id).changes);
+export function updateExpense(id: number, p: Partial<Pick<Expense, "amount_minor" | "category" | "merchant" | "note">>): void {
+  const c = getExpense(id)!;
+  const n = { ...c, ...p };
+  db.prepare("UPDATE expenses SET amount_minor = ?, category = ?, merchant = ?, note = ? WHERE id = ?").run(n.amount_minor, n.category, n.merchant, n.note, id);
+}
+
+// ---- 重要日期 ----
+export interface ImportantDate { id: number; title: string; month: number; day: number; year: number; repeat: "once" | "yearly"; remind_days: string; note: string }
+export const addImportantDate = (d: Omit<ImportantDate, "id">): number =>
+  Number(db.prepare("INSERT INTO important_dates (title, month, day, year, repeat, remind_days, note) VALUES (?, ?, ?, ?, ?, ?, ?)").run(d.title, d.month, d.day, d.year, d.repeat, d.remind_days, d.note).lastInsertRowid);
+export const listImportantDates = () => db.prepare("SELECT * FROM important_dates ORDER BY month, day, id").all() as unknown as ImportantDate[];
+export const deleteImportantDate = (id: number) => Number(db.prepare("DELETE FROM important_dates WHERE id = ?").run(id).changes);
+
+// ---- 备份：用 SQLite 自己的 VACUUM INTO 拷一份一致的快照 ----
+export function backupTo(file: string): void {
+  db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+}
+
+// ---- 待她确认的操作（Claude 起草，她点了才真执行）----
+export interface PendingAction { id: number; at: number; kind: string; summary: string; payload: string; status: string }
+export const addPending = (kind: string, summary: string, payload: unknown): number =>
+  Number(db.prepare("INSERT INTO pending_actions (at, kind, summary, payload) VALUES (?, ?, ?, ?)").run(now(), kind, summary, JSON.stringify(payload)).lastInsertRowid);
+export const listPending = () => db.prepare("SELECT * FROM pending_actions WHERE status = 'pending' ORDER BY id").all() as unknown as PendingAction[];
+export const getPending = (id: number) => db.prepare("SELECT * FROM pending_actions WHERE id = ?").get(id) as PendingAction | undefined;
+export const setPendingStatus = (id: number, status: string) => void db.prepare("UPDATE pending_actions SET status = ? WHERE id = ?").run(status, id);
+
+// ---- 电台节目（独立存放，不进聊天记录）----
+export interface Episode {
+  id: number;
+  title: string;
+  title_en: string;
+  zh: string;
+  en: string;
+  topic: string;
+  status: "writing" | "voicing" | "ready" | "failed";
+  error: string | null;
+  created_at: number;
+}
+export function createEpisode(topic: string): number {
+  return Number(db.prepare("INSERT INTO episodes (topic, status, created_at) VALUES (?, 'writing', ?)").run(topic, now()).lastInsertRowid);
+}
+export function updateEpisode(id: number, f: Partial<Omit<Episode, "id" | "created_at">>): void {
+  const keys = Object.keys(f) as (keyof typeof f)[];
+  if (!keys.length) return;
+  db.prepare(`UPDATE episodes SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => f[k] ?? null), id);
+}
+export const getEpisode = (id: number) => db.prepare("SELECT * FROM episodes WHERE id = ?").get(id) as Episode | undefined;
+export const listEpisodes = (limit: number) => db.prepare("SELECT * FROM episodes ORDER BY id DESC LIMIT ?").all(limit) as unknown as Episode[];
+
+// ---- 每月一封信 ----
+export interface Letter { id: number; month: string; title: string; body: string; status: "writing" | "ready" | "failed"; error: string | null; emailed_at: number | null; email_error: string | null; created_at: number }
+export const createLetter = (month: string): number => Number(db.prepare("INSERT INTO letters (month, status, created_at) VALUES (?, 'writing', ?)").run(month, now()).lastInsertRowid);
+export function updateLetter(id: number, f: Partial<Omit<Letter, "id" | "created_at">>): void {
+  const keys = Object.keys(f) as (keyof typeof f)[];
+  if (!keys.length) return;
+  db.prepare(`UPDATE letters SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => f[k] ?? null), id);
+}
+export const getLetter = (id: number) => db.prepare("SELECT * FROM letters WHERE id = ?").get(id) as Letter | undefined;
+export const listLetters = (limit: number) => db.prepare("SELECT * FROM letters ORDER BY id DESC LIMIT ?").all(limit) as unknown as Letter[];
+export const countUserMessagesSince = (since: number) => Number((db.prepare("SELECT COUNT(*) AS n FROM messages WHERE role = 'user' AND created_at >= ?").get(since) as { n: number }).n);
+
+/** 她最后一条消息之后，Claude 连着发了几条她还没回的主动消息，以及最后一条是什么时候 */
+export function trailingProactive(conversationId: string): { count: number; lastAt: number } {
+  const rows = db.prepare("SELECT role, kind, created_at FROM messages WHERE conversation_id = ? ORDER BY id DESC LIMIT 12").all(conversationId) as unknown as { role: string; kind: string | null; created_at: number }[];
+  let count = 0, lastAt = 0;
+  for (const r of rows) {
+    if (r.role === "user") break;
+    if (r.kind === "proactive") { count++; lastAt = lastAt || r.created_at; }
+  }
+  return { count, lastAt };
 }
 
 export function proactiveStats(conversationId: string, since: number): { count: number; lastAt: number } {
