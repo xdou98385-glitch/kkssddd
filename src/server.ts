@@ -11,7 +11,7 @@ import { buildHistory, buildSystem, DEFAULT_WINDOW, maybeSummarize, stripToolMar
 import { isImageName, readImage, saveImage } from "./uploads.ts";
 import { DEFAULT_SYSTEM } from "./persona.ts";
 import { wereadStatus } from "./weread.ts";
-import { CATS, addMemory, deleteMemory, listMemories, memosEnabled, memosStatus, updateMemory } from "./memos.ts";
+import { CATS, addMemory, deleteMemory, listMemories, memoryMedia, memosEnabled, memosStatus, updateMemory } from "./memos.ts";
 import { publicKey, rememberOrigin, sendPush } from "./push.ts";
 import { checkDeviceToken, checkRawToken, deviceEnabled, recordEvent } from "./device.ts";
 import { getProactive, heartbeat, startScheduler, updateProactive } from "./proactive.ts";
@@ -226,6 +226,13 @@ const memErr = (c: Context, err: unknown) => c.json({ error: (err as Error).mess
 app.get("/api/memories", async (c) => {
   if (!memosEnabled) return c.json({ enabled: false, items: [] });
   try { return c.json({ enabled: true, items: await listMemories(), cats: CATS }); } catch (err) { return memErr(c, err); }
+});
+app.get("/api/memories/media", async (c) => {
+  try {
+    const r = await memoryMedia(c.req.query("p") ?? "");
+    if (!r) return c.json({ error: "读不到这张图" }, 404);
+    return new Response(r.body, { headers: { "Content-Type": r.type, "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff" } });
+  } catch { return c.json({ error: "读不到这张图" }, 404); }
 });
 app.post("/api/memories", async (c) => {
   try { const b = await c.req.json(); await addMemory(String(b.content ?? ""), String(b.cat ?? "")); return c.json({ ok: true }); } catch (err) { return memErr(c, err); }

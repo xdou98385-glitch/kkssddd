@@ -1365,6 +1365,17 @@ function memRow(x) {
   const body = document.createElement("div");
   body.className = "mem-body";
   body.textContent = x.content;
+  body.hidden = !x.content; // 只有图没有字
+  const pics = document.createElement("div");
+  pics.className = "mem-imgs";
+  for (const src of x.images || []) {
+    const im = document.createElement("img");
+    im.loading = "lazy"; im.src = src; im.alt = "";
+    im.referrerPolicy = "no-referrer";
+    im.onclick = () => openLightbox(src);
+    im.onerror = () => { const miss = document.createElement("span"); miss.className = "mem-miss"; miss.textContent = "（这张图读不出来）"; im.replaceWith(miss); };
+    pics.append(im);
+  }
   const meta = document.createElement("div");
   meta.className = "mem-meta";
   const label = document.createElement("span");
@@ -1394,7 +1405,7 @@ function memRow(x) {
   });
   mk("删除", () => { if (confirm("删掉这条记忆？删了就找不回来。")) act(() => api(url, { method: "DELETE" }), "已删除"); });
   meta.append(label, btns);
-  li.append(body, meta);
+  li.append(body, pics, meta);
   return li;
 }
 async function loadMemories() {
