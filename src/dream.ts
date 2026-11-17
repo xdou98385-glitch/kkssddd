@@ -136,3 +136,11 @@ export function dreamsText(n = 3): string {
   if (!ds.length) return "还没有做过梦";
   return ds.map((d) => `[${d.day}] ${d.title}（${d.slug}）\n${d.body.replace(/\[\[|\]\]/g, "")}`).join("\n---\n");
 }
+
+/** 放进系统提示词的：最近 30 小时内做的梦，让它在聊天里能自然提起。没有就返回空 */
+export function recentDreamBlock(now = Date.now()): string {
+  const d = db.listDreams(5).find((x) => x.status === "ready" && now - x.created_at < 30 * 3600_000);
+  if (!d) return "";
+  const text = d.body.replace(/\[\[|\]\]/g, "").replace(/`[^`]*`/g, "").replace(/\s+/g, " ").trim();
+  return `你最近做的梦（${d.day}，《${d.title}》）：${text.slice(0, 260)}${text.length > 260 ? "……" : ""}\n她可能还没看过。聊天里合适的时候（早上第一句、她提到相关的东西、聊到睡觉做梦）可以自然提一句，一两句就好，别背诵全文，也别硬塞；她感兴趣再用 dream_view 讲细节。她明显在忙或心情不好时就别提。`;
+}
