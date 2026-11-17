@@ -5,12 +5,21 @@ import * as db from "./db.ts";
 import { DEFAULT_MODEL, MODELS, findModel, streamChat } from "./claude.ts";
 import { buildHistory, buildSystem, stripToolMarks } from "./context.ts";
 import { userTz } from "./device.ts";
-import { localClock } from "./expense.ts";
+import { localClock, localDayStart } from "./expense.ts";
 import { listMemories, memosEnabled } from "./memos.ts";
 
-export interface DreamCfg { enabled: boolean }
-export const getDreamCfg = (): DreamCfg => { try { return { enabled: Boolean(JSON.parse(db.getSetting("dream") || "{}").enabled) }; } catch { return { enabled: false }; } };
-export function setDreamCfg(enabled: boolean): DreamCfg { db.setSetting("dream", JSON.stringify({ enabled })); return { enabled }; }
+export type Freq = "rare" | "normal" | "often";
+export const FREQ_P: Record<Freq, number> = { rare: 0.15, normal: 0.35, often: 0.65 }; // 每个夜晚做梦的基础概率
+export interface DreamCfg { enabled: boolean; freq: Freq }
+export function getDreamCfg(): DreamCfg {
+  try { const v = JSON.parse(db.getSetting("dream") || "{}"); return { enabled: Boolean(v.enabled), freq: v.freq in FREQ_P ? v.freq : "normal" }; } catch { return { enabled: false, freq: "normal" }; }
+}
+export function setDreamCfg(p: { enabled?: boolean; freq?: string }): DreamCfg {
+  const cur = getDreamCfg();
+  const next: DreamCfg = { enabled: typeof p.enabled === "boolean" ? p.enabled : cur.enabled, freq: p.freq && p.freq in FREQ_P ? (p.freq as Freq) : cur.freq };
+  db.setSetting("dream", JSON.stringify(next));
+  return next;
+}
 
 // 「陌生的东西」：聊天里多半从没出现过的场景和物件，保证每个梦里有一点真正的新东西
 const STRANGE = [
@@ -119,15 +128,36 @@ async function dream(id: number): Promise<void> {
   }
 }
 
-/** 开着的话，每天凌晨 4 点以后（中午前）做一个；每天只做一次，手动「现在做一个」不占这个名额 */
-export function maybeDream(now: number): void {
-  if (!getDreamCfg().enabled) return;
-  const c = localClock(now);
-  if (c.minutes < 4 * 60 || c.minutes >= 12 * 60) return;
+/** 今晚做梦的概率：基础概率，好几天没做梦就更容易做，这两天几乎没聊过（没什么可梦的）就更不容易，白天聊得多就更容易 */
+export function dreamChance(now: number, freq: Freq): number {
+  let p = FREQ_P[freq];
+  const last = db.listDreams(20).find((d) => d.status === "ready");
+  const gapDays = last ? (now - last.created_at) / 86400_000 : 99;
+  if (gapDays >= 7) p += 0.3; else if (gapDays >= 4) p += 0.12;
+  if (gapDays < 1) p *= 0.5; // 刚做过，别连着来太密
+  const recentMsgs = db.countUserMessagesSince(now - 24 * 3600_000);
+  if (recentMsgs === 0 && db.countUserMessagesSince(now - 48 * 3600_000) === 0) p *= 0.4;
+  else if (recentMsgs >= 25) p *= 1.4;
+  return Math.max(0, Math.min(0.9, p));
+}
+
+/** 像人一样随机：每天第一次检查时掷一次骰子决定今晚有没有梦；有的话再随机选一个醒来的时间（当地 04:00–09:00），到点做。
+ *  有的夜晚没有梦，有的间隔好几天，偶尔隔天又来。手动「现在做一个」不受这套影响。rnd/start 只给测试用 */
+export function maybeDream(now: number, rnd: () => number = Math.random, start: () => unknown = startDream): void {
+  const cfg = getDreamCfg();
+  if (!cfg.enabled) return;
   const day = dayOf(now);
-  if (db.getSetting("dream_day") === day) return;
-  if (!("id" in startDream())) return;
-  db.setSetting("dream_day", day);
+  let st: { day: string; fireAt: number | null; done: boolean };
+  try { st = JSON.parse(db.getSetting("dream_state") || "null"); } catch { st = null as never; }
+  if (!st || st.day !== day) {
+    const fire = rnd() < dreamChance(now, cfg.freq);
+    st = { day, fireAt: fire ? localDayStart(now) + (4 * 60 + Math.floor(rnd() * 5 * 60)) * 60_000 : null, done: false };
+    db.setSetting("dream_state", JSON.stringify(st));
+  }
+  if (st.done || st.fireAt === null || now < st.fireAt || now > st.fireAt + 6 * 3600_000) return; // 没到点，或错过太久（服务停了）就算这晚没梦
+  if (!("id" in (start() as object))) return; // 正好有一个在写，下次再看
+  st.done = true;
+  db.setSetting("dream_state", JSON.stringify(st));
 }
 
 /** 给 Claude 看的：最近的梦（她问起时用） */

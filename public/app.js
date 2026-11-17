@@ -1556,12 +1556,14 @@ async function loadDreams() {
   try {
     const d = await api("/dreams");
     $("dr-on").checked = d.config.enabled;
+    $("dr-freq").value = d.config.freq;
     drRender(d.dreams);
     if (d.dreams.some((x) => x.status === "writing")) { drNote("正在做梦…"); dr.timer = setTimeout(loadDreams, 4000); }
     else if ($("dr-note").textContent.startsWith("正在做梦")) drNote("");
   } catch (err) { drNote("读不到：" + err.message, true); }
 }
-$("dr-on").onchange = () => api("/dreams/config", { method: "PUT", body: { enabled: $("dr-on").checked } }).then(() => drNote($("dr-on").checked ? "开了：每天凌晨 4 点以后做一个，一天一次" : "关了")).catch((e) => drNote(e.message, true));
+$("dr-on").onchange = () => api("/dreams/config", { method: "PUT", body: { enabled: $("dr-on").checked } }).then(() => drNote($("dr-on").checked ? "开了：不是每晚都有。每天早上随机决定今晚有没有梦、几点醒来做" : "关了")).catch((e) => drNote(e.message, true));
+$("dr-freq").onchange = () => api("/dreams/config", { method: "PUT", body: { freq: $("dr-freq").value } }).then(() => drNote("改好了")).catch((e) => drNote(e.message, true));
 $("dr-now").onclick = async () => { try { await api("/dreams/write", { method: "POST" }); loadDreams(); } catch (err) { drNote(err.message, true); } };
 
 // ---- 通话 ----

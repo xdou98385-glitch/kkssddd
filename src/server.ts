@@ -392,7 +392,7 @@ app.post("/api/letters/:id/email", async (c) => { await emailLetter(Number(c.req
 
 // ---- 梦 ----
 app.get("/api/dreams", (c) => c.json({ dreams: db.listDreams(60), config: getDreamCfg() }));
-app.put("/api/dreams/config", async (c) => c.json({ config: setDreamCfg(Boolean((await c.req.json()).enabled)) }));
+app.put("/api/dreams/config", async (c) => { const b = await c.req.json(); return c.json({ config: setDreamCfg({ enabled: b.enabled, freq: b.freq }) }); });
 app.post("/api/dreams/write", (c) => { const r = startDream(); return "error" in r ? c.json(r, 409) : c.json(r); });
 
 // ---- 待她确认的操作（比如 Claude 起草的抖音私信）----

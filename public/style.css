@@ -524,3 +524,4 @@ body[data-page="dreams"]::after { content: ""; position: fixed; inset: 0; pointe
 .dr-link { margin-top: 12px; font-size: 11.5px; color: var(--muted); border: 0; padding: 0; }
 .dr-trace { margin-top: 8px; padding: 10px 12px; border-left: 1px solid var(--hairline); color: var(--muted); font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
 .dr-trace[hidden] { display: none; }
+.dr-ctl select { padding: 5px 8px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 2px; color: var(--text); font: 12.5px/1.4 inherit; font-family: inherit; }
