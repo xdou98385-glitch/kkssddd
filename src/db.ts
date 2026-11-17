@@ -137,6 +137,20 @@ db.exec(`
   );
 `);
 db.prepare("UPDATE letters SET status = 'failed', error = '服务重启，这封没写完' WHERE status = 'writing'").run();
+db.exec(`
+  CREATE TABLE IF NOT EXISTS dreams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    day TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    slug TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    seeds TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL,
+    error TEXT,
+    created_at INTEGER NOT NULL
+  );
+`);
+db.prepare("UPDATE dreams SET status = 'failed', error = '服务重启，这个梦没做完' WHERE status = 'writing'").run();
 // 上次进程被重启时还没写完的电台节目，标成失败，免得一直转圈
 db.prepare("UPDATE episodes SET status = 'failed', error = '服务重启，这期没做完' WHERE status IN ('writing', 'voicing')").run();
 ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的；'podcast' = 她点「来一期」生成的微播客
@@ -432,6 +446,19 @@ export function updateLetter(id: number, f: Partial<Omit<Letter, "id" | "created
 export const getLetter = (id: number) => db.prepare("SELECT * FROM letters WHERE id = ?").get(id) as Letter | undefined;
 export const listLetters = (limit: number) => db.prepare("SELECT * FROM letters ORDER BY id DESC LIMIT ?").all(limit) as unknown as Letter[];
 export const countUserMessagesSince = (since: number) => Number((db.prepare("SELECT COUNT(*) AS n FROM messages WHERE role = 'user' AND created_at >= ?").get(since) as { n: number }).n);
+
+// ---- 梦 ----
+export interface Dream { id: number; day: string; title: string; slug: string; body: string; seeds: string; status: "writing" | "ready" | "failed"; error: string | null; created_at: number }
+export const createDream = (day: string, seeds: string): number => Number(db.prepare("INSERT INTO dreams (day, seeds, status, created_at) VALUES (?, ?, 'writing', ?)").run(day, seeds, now()).lastInsertRowid);
+export function updateDream(id: number, f: Partial<Omit<Dream, "id" | "created_at">>): void {
+  const keys = Object.keys(f) as (keyof typeof f)[];
+  if (!keys.length) return;
+  db.prepare(`UPDATE dreams SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => f[k] ?? null), id);
+}
+export const listDreams = (limit: number) => db.prepare("SELECT * FROM dreams ORDER BY id DESC LIMIT ?").all(limit) as unknown as Dream[];
+/** 某个时间段内的对话原文（两边都算），给做梦挑素材用 */
+export const messagesBetween = (from: number, to: number, limit = 400) =>
+  db.prepare("SELECT role, content, created_at FROM messages WHERE created_at >= ? AND created_at < ? ORDER BY id DESC LIMIT ?").all(from, to, limit) as unknown as { role: string; content: string; created_at: number }[];
 
 /** 她最后一条消息之后，Claude 连着发了几条她还没回的主动消息，以及最后一条是什么时候 */
 export function trailingProactive(conversationId: string): { count: number; lastAt: number } {

@@ -9,6 +9,7 @@ import { sendPush } from "./push.ts";
 import { fmtLocal } from "./schedule.ts";
 import { dueToday } from "./dates.ts";
 import { maybeWriteLetter } from "./letter.ts";
+import { maybeDream } from "./dream.ts";
 import { getNudge, localClock, todayState } from "./expense.ts";
 
 const CHECKINS_PER_DAY = 3;
@@ -135,6 +136,7 @@ async function tick(): Promise<void> {
     for (const it of db.dueScheduled(Date.now())) await fire(it);
     await dailyJobs(Date.now());
     maybeWriteLetter(Date.now());
+    maybeDream(Date.now());
   } catch (err) {
     console.error("scheduler:", err instanceof Error ? err.message : err);
   } finally {

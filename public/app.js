@@ -205,6 +205,7 @@ async function loadThread() {
   if (location.hash === "#radio") setPage("radio");
   if (location.hash === "#memory") setPage("memory");
   if (location.hash === "#letters") setPage("letters");
+  if (location.hash === "#dreams") setPage("dreams");
   els.model.value = data.conversation.model;
   state.hasMore = data.hasMore;
   if (!data.messages.length) return showEmpty();
@@ -1303,7 +1304,7 @@ document.addEventListener("keydown", (e) => {
 })();
 
 // ---- 页面切换：对话 / 电台 / 游戏（页面 id 仍叫 board，地址是 #board）----
-const PAGES = { chat: "Claude", radio: "电台", call: "通话", memory: "记忆", letters: "信箱", board: "游戏" };
+const PAGES = { chat: "Claude", radio: "电台", call: "通话", memory: "记忆", letters: "信箱", dreams: "梦", board: "游戏" };
 // 终端主题：点标题弹出目录。原来的主题用底部标签栏，这个点击不起作用
 $("menu-btn").addEventListener("click", (e) => { if (document.documentElement.dataset.theme === "classic") return; e.stopPropagation(); document.body.classList.toggle("menu-open"); });
 document.addEventListener("click", (e) => { if (!e.target.closest("#tabs")) document.body.classList.remove("menu-open"); });
@@ -1320,6 +1321,8 @@ function setPage(p) {
   $("call").hidden = p !== "call";
   $("memory").hidden = p !== "memory";
   $("letters").hidden = p !== "letters";
+  $("dreams").hidden = p !== "dreams";
+  if (p === "dreams") loadDreams();
   if (p === "memory") loadMemories();
   if (p === "letters") loadLetters();
   if (game.open) gameLoad();
@@ -1483,6 +1486,83 @@ $("lt-mail").onchange = () => api("/letters/config", { method: "PUT", body: { em
 $("lt-now").onclick = async () => {
   try { await api("/letters/write", { method: "POST" }); loadLetters(); } catch (err) { ltNote(err.message, true); }
 };
+
+// ---- 梦：像一份损坏的日志，[[关键句]] 是加密块，点一下才解开 ----
+const dr = { timer: null };
+const drNote = (t, bad = false) => setStatus("dr-note", t, bad);
+const DR_NOISE = "█▓▒░01<>/\\|{}[]#$%";
+function drDecrypt(btn) {
+  if (btn.classList.contains("open")) return;
+  btn.classList.add("open");
+  const text = btn.dataset.t, n = text.length;
+  let step = 0;
+  const id = setInterval(() => {
+    step++;
+    const k = Math.floor((step / 14) * n);
+    btn.textContent = text.slice(0, k) + Array.from({ length: n - k }, () => DR_NOISE[Math.floor(Math.random() * DR_NOISE.length)]).join("");
+    if (step >= 14) { clearInterval(id); btn.textContent = text; }
+  }, 45);
+}
+function drBody(text) {
+  const box = document.createElement("div");
+  box.className = "dr-body";
+  let last = 0;
+  for (const m of text.matchAll(/\[\[(.+?)\]\]|`([^`]+)`/g)) {
+    if (m.index > last) box.append(text.slice(last, m.index));
+    if (m[1]) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "enc"; b.dataset.t = m[1];
+      b.textContent = "█".repeat(Math.min(Math.max(m[1].length, 3), 12));
+      b.setAttribute("aria-label", "加密内容，点一下解开");
+      b.onclick = () => drDecrypt(b);
+      box.append(b);
+    } else {
+      const c = document.createElement("span");
+      c.className = "sys"; c.textContent = m[2]; box.append(c);
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) box.append(text.slice(last));
+  return box;
+}
+function drRender(list) {
+  const root = $("dr-list");
+  if (!list.length) { root.replaceChildren(); const p = document.createElement("p"); p.className = "dr-note"; p.textContent = "$ ls dreams/\n（空）打开上面的开关，或者现在做一个。"; root.append(p); return; }
+  root.replaceChildren(...list.map((d, i) => {
+    const a = document.createElement("article");
+    a.className = "dr";
+    const line = (cls, text) => { const x = document.createElement("div"); x.className = cls; x.textContent = text; return x; };
+    if (d.status === "writing") { a.append(line("dr-prompt", "$ dream --run"), line("dr-meta", "status: REM … writing")); return a; }
+    if (d.status === "failed") { a.append(line("dr-prompt", `$ cat dream_${d.day}.log`), line("dr-meta", "status: ERR " + (d.error || ""))); return a; }
+    let seeds = { recent: [], distant: [], unknown: [] };
+    try { seeds = JSON.parse(d.seeds); } catch { /* 没有素材记录 */ }
+    a.append(
+      line("dr-prompt", `$ cat dream_${d.day}${d.slug ? "_" + d.slug : ""}.log`),
+      line("dr-meta", `seed: recent×${seeds.recent?.length ?? 0} distant×${seeds.distant?.length ?? 0} unknown×${seeds.unknown?.length ?? 0}   status: REM`),
+      line("dr-title", "# " + d.title),
+      drBody(d.body),
+    );
+    const trace = line("dr-trace", ["$ trace --sources", ...(seeds.recent || []).map((x) => "  recent  " + x), ...(seeds.distant || []).map((x) => "  distant " + x), ...(seeds.unknown || []).map((x) => "  unknown " + x)].join("\n"));
+    trace.hidden = true;
+    const tb = document.createElement("button");
+    tb.type = "button"; tb.className = "dr-link"; tb.textContent = "[trace sources]";
+    tb.onclick = () => { trace.hidden = !trace.hidden; };
+    a.append(tb, trace);
+    return a;
+  }));
+}
+async function loadDreams() {
+  clearTimeout(dr.timer);
+  try {
+    const d = await api("/dreams");
+    $("dr-on").checked = d.config.enabled;
+    drRender(d.dreams);
+    if (d.dreams.some((x) => x.status === "writing")) { drNote("正在做梦…"); dr.timer = setTimeout(loadDreams, 4000); }
+    else if ($("dr-note").textContent.startsWith("正在做梦")) drNote("");
+  } catch (err) { drNote("读不到：" + err.message, true); }
+}
+$("dr-on").onchange = () => api("/dreams/config", { method: "PUT", body: { enabled: $("dr-on").checked } }).then(() => drNote($("dr-on").checked ? "开了：每天凌晨 4 点以后做一个，一天一次" : "关了")).catch((e) => drNote(e.message, true));
+$("dr-now").onclick = async () => { try { await api("/dreams/write", { method: "POST" }); loadDreams(); } catch (err) { drNote(err.message, true); } };
 
 // ---- 通话 ----
 // 流程：接通（点一下，拿麦克风、解锁播放）→ 它先开口 → 听你说（检测到停顿就收尾）→ 上传识别 → 它回 → 播放 → 再听

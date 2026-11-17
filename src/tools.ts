@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import { dreamsText } from "./dream.ts";
 import { load as gomokuLoad, viewText as gomokuViewText } from "./gomoku.ts";
 import { CATS as MEM_CATS, coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
@@ -449,6 +450,13 @@ const expenseTools: Tool[] = [
   { def: { name: "expense_nudge_set", description: "设每晚记账提醒：到点今天还没记过账，就问她一句。time 是她当地时间 HH:MM。", input_schema: { type: "object", properties: { enabled: { type: "boolean" }, time: { type: "string" } }, required: ["enabled", "time"], additionalProperties: false } }, run: async (i) => nudgeSet(!!i.enabled, String(i.time)), label: () => "设了记账提醒" },
 ];
 
+// 梦：她问起「你昨晚梦到什么」时才用
+const dreamTools: Tool[] = [{
+  def: { name: "dream_view", description: "看你最近几次做的梦（夜里系统用碎片让你写的）。她问起你的梦、昨晚梦到什么时先调用。", input_schema: { type: "object", properties: {}, additionalProperties: false } },
+  run: async () => dreamsText(3),
+  label: () => "回想了一下梦",
+}];
+
 // 重要日期簿
 const dateTools: Tool[] = [
   {
@@ -668,6 +676,7 @@ export const getTools = (): Tool[] => capStrict([
   ...wishTools,
   ...expenseTools,
   ...dateTools,
+  ...dreamTools,
   ...lockTools,
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),

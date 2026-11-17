@@ -21,6 +21,7 @@ import { latestBackupPath, listBackups, runBackup, startBackups } from "./backup
 import * as gm from "./gomoku.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { startPodcast } from "./podcast.ts";
+import { getDreamCfg, setDreamCfg, startDream } from "./dream.ts";
 import { emailLetter, getLetterCfg, setLetterCfg, startLetter } from "./letter.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
 import { xhsQrcode, xhsStatus } from "./xhs.ts";
@@ -388,6 +389,11 @@ app.get("/api/letters", (c) => c.json({ letters: db.listLetters(60), config: get
 app.put("/api/letters/config", async (c) => { const b = await c.req.json(); return c.json({ config: setLetterCfg({ enabled: b.enabled, email: b.email }) }); });
 app.post("/api/letters/write", (c) => { const r = startLetter(); return "error" in r ? c.json(r, 409) : c.json(r); });
 app.post("/api/letters/:id/email", async (c) => { await emailLetter(Number(c.req.param("id"))); const l = db.getLetter(Number(c.req.param("id"))); return c.json({ ok: Boolean(l?.emailed_at), error: l?.email_error ?? null }); });
+
+// ---- 梦 ----
+app.get("/api/dreams", (c) => c.json({ dreams: db.listDreams(60), config: getDreamCfg() }));
+app.put("/api/dreams/config", async (c) => c.json({ config: setDreamCfg(Boolean((await c.req.json()).enabled)) }));
+app.post("/api/dreams/write", (c) => { const r = startDream(); return "error" in r ? c.json(r, 409) : c.json(r); });
 
 // ---- 待她确认的操作（比如 Claude 起草的抖音私信）----
 app.get("/api/actions", (c) => c.json({ actions: db.listPending().map((a) => ({ id: a.id, summary: a.summary })) }));

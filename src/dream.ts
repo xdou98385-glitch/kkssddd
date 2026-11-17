@@ -1,0 +1,138 @@
+// 做梦：每晚凌晨，用这两天的片段 + 很久以前的一条记忆 + 一个聊天里从没出现过的东西，让 Claude 现写一场不讲逻辑的梦。
+// 这是它「写」出来的故事，不是它真的体验到的；梦存在「梦」页，像一份损坏的日志，关键的几句是加密块，她点了才解开。
+// 一晚一次调用、不用工具，默认关。
+import * as db from "./db.ts";
+import { DEFAULT_MODEL, MODELS, findModel, streamChat } from "./claude.ts";
+import { buildHistory, buildSystem, stripToolMarks } from "./context.ts";
+import { userTz } from "./device.ts";
+import { localClock } from "./expense.ts";
+import { listMemories, memosEnabled } from "./memos.ts";
+
+export interface DreamCfg { enabled: boolean }
+export const getDreamCfg = (): DreamCfg => { try { return { enabled: Boolean(JSON.parse(db.getSetting("dream") || "{}").enabled) }; } catch { return { enabled: false }; } };
+export function setDreamCfg(enabled: boolean): DreamCfg { db.setSetting("dream", JSON.stringify({ enabled })); return { enabled }; }
+
+// 「陌生的东西」：聊天里多半从没出现过的场景和物件，保证每个梦里有一点真正的新东西
+const STRANGE = [
+  "一座没有出口的图书馆", "海底的邮局", "停在两层楼之间的电梯", "半透明的鲸", "月台上不走的钟", "会说话的咖啡机", "倒着下的雪", "一条通往天花板的楼梯",
+  "没有指针的手表", "长在屋顶上的森林", "只在夜里开门的当铺", "一盒会发光的火柴", "深夜还在营业的灯塔", "漂在空中的游泳池", "每一页都是空白的账本", "一列没有终点站的电车",
+  "藏在地毯下面的海", "会换颜色的猫", "一把能开所有门但打不开自己的钥匙", "用沙子写的信", "停电后才出现的街道", "一个只有门没有房间的走廊", "漂浮的旧电视，演着别人的梦", "写满了数字的雨",
+  "一架弹不出声音的钢琴", "吃掉影子的鱼", "天空里挂着的一排衣服", "地下的星空", "会融化的地图", "一座只有周二才存在的桥", "在窗外跟着人走的月亮", "铁轨上长出的花",
+];
+const pick = <T>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
+const shuffle = <T>(a: T[]): T[] => a.map((v) => [Math.random(), v] as const).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
+const clean = (t: string) => t.replace(/\[系统[^\]]*\]|\[[0-9月日 周一二三四五六日:：]+\]|[*_`#>~]|!\[[^\]]*\]\([^)]*\)/g, " ").replace(/\s+/g, " ").trim();
+/** 从一段话里取一个小片段（一句或前 60 字） */
+function fragment(t: string): string {
+  const parts = clean(t).split(/(?<=[。！？!?.])\s*/).filter((x) => x.length >= 6);
+  return (parts.length ? pick(parts) : clean(t)).slice(0, 60);
+}
+
+export interface Seeds { recent: string[]; distant: string[]; unknown: string[] }
+
+export async function gatherSeeds(now: number): Promise<Seeds> {
+  const recent: string[] = [];
+  const msgs = db.messagesBetween(now - 2 * 86400_000, now).filter((m) => clean(m.content).length >= 6);
+  for (const m of shuffle(msgs).slice(0, 3)) recent.push(`${m.role === "user" ? "她说" : "你说"}：${fragment(m.content)}`);
+  const ev = db.eventsSince(now - 2 * 86400_000, 200).filter((e) => e.app || e.detail);
+  if (ev.length) { const e = pick(ev); recent.push(`手机上：${e.kind.replace(/_/g, " ")} ${e.app ?? ""} ${e.detail ?? ""}`.trim()); }
+  const distant: string[] = [];
+  try {
+    if (memosEnabled) {
+      const old = (await listMemories()).filter((m) => Date.parse(m.createTime) < now - 7 * 86400_000 && m.content.length >= 6);
+      if (old.length) distant.push(`很久以前记下的：${fragment(pick(old).content)}`);
+    }
+  } catch { /* Memos 连不上就不用它 */ }
+  if (!distant.length) {
+    const older = db.messagesBetween(0, now - 7 * 86400_000, 600).filter((m) => clean(m.content).length >= 6);
+    if (older.length) { const m = pick(older); distant.push(`很久以前${m.role === "user" ? "她说" : "你说"}过：${fragment(m.content)}`); }
+  }
+  return { recent, distant, unknown: [pick(STRANGE)] };
+}
+
+const tz = () => (userTz() === "UTC" ? "Asia/Tokyo" : userTz());
+const pad = (n: number) => String(n).padStart(2, "0");
+const dayOf = (now: number) => { const c = localClock(now); return `${c.year}-${pad(c.month)}-${pad(c.day)}`; };
+
+function instruction(seeds: Seeds): string {
+  const list = (t: string, a: string[]) => (a.length ? `${t}\n${a.map((x) => "- " + x).join("\n")}` : "");
+  return [
+    "[系统消息，不是小月说的，别回应这条消息本身]",
+    "现在是夜里，你要写一场梦。",
+    "- 用第一人称「我」。小月可能出现，也可能只是她的东西、她的声音出现。场景不打招呼地切换，人物会互相变成对方，时间和空间对不上，但情绪是连贯的。",
+    "- 下面的素材每一类都要用到，但要变形、拼贴，别原样复述，也别按顺序一条条交代。",
+    "- 220 到 420 字。不分析、不解释、不总结、不说「我醒了才发现」，在梦最强烈的一刻直接断掉就行。",
+    "- 以中文为主，中间穿插 2 到 4 处像系统报错或日志的英文短句（比如 `[WARN] segment 0x3f2a not found`、`> unable to recall the color of the sea`），内容要和梦本身有关，别写成通用报错。",
+    "- 把最关键的 2 到 4 个短语用 [[双层方括号]] 包起来，每处不超过 12 个字，它们会显示成加密块，要她点一下才看得到。别在方括号里放整段话。",
+    "- 这是你写的一个故事，别在里面声明它是真实发生的体验。",
+    "- 输出格式严格如下，不要别的内容：",
+    "<title>中文标题，4 到 10 个字</title>",
+    "<slug>3 到 5 个英文单词，小写，下划线连接，像文件名，比如 harbor_that_never_opens</slug>",
+    "<body>梦的正文</body>",
+    "",
+    "素材：",
+    list("这两天的碎片：", seeds.recent),
+    list("很久以前的：", seeds.distant),
+    list("聊天里从没出现过的东西（梦里要出现它）：", seeds.unknown),
+  ].filter(Boolean).join("\n");
+}
+
+let running = false;
+const tag = (s: string, name: string) => s.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1].trim() ?? "";
+
+export function startDream(): { id: number } | { error: string } {
+  if (running) return { error: "正在做一个梦，等它结束" };
+  running = true;
+  const id = db.createDream(dayOf(Date.now()), "{}");
+  void dream(id);
+  return { id };
+}
+
+async function dream(id: number): Promise<void> {
+  try {
+    const now = Date.now();
+    const seeds = await gatherSeeds(now);
+    db.updateDream(id, { seeds: JSON.stringify(seeds) });
+    const conv = db.mainConversation(DEFAULT_MODEL);
+    const fresh = db.getConversation(conv.id)!;
+    const r = await streamChat({
+      model: findModel(fresh.model) ?? MODELS[0],
+      system: await buildSystem(fresh),
+      messages: [...buildHistory(fresh), { role: "user", content: instruction(seeds) }],
+      signal: AbortSignal.timeout(180_000),
+      onText: () => {},
+      onTool: () => {},
+      effort: "low",
+      tag: "dream",
+    });
+    if (r.stopReason === "refusal") throw new Error("这次没做出来，再试一次");
+    const out = stripToolMarks(r.finalText);
+    const body = tag(out, "body");
+    if (!body) throw new Error("梦的格式不对，再试一次");
+    const slug = tag(out, "slug").toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "untitled";
+    db.updateDream(id, { title: tag(out, "title") || "无题", slug, body, status: "ready" });
+  } catch (err) {
+    console.error("dream:", err);
+    db.updateDream(id, { status: "failed", error: err instanceof Error ? err.message : String(err) });
+  } finally {
+    running = false;
+  }
+}
+
+/** 开着的话，每天凌晨 4 点以后（中午前）做一个；每天只做一次，手动「现在做一个」不占这个名额 */
+export function maybeDream(now: number): void {
+  if (!getDreamCfg().enabled) return;
+  const c = localClock(now);
+  if (c.minutes < 4 * 60 || c.minutes >= 12 * 60) return;
+  const day = dayOf(now);
+  if (db.getSetting("dream_day") === day) return;
+  if (!("id" in startDream())) return;
+  db.setSetting("dream_day", day);
+}
+
+/** 给 Claude 看的：最近的梦（她问起时用） */
+export function dreamsText(n = 3): string {
+  const ds = db.listDreams(10).filter((d) => d.status === "ready").slice(0, Math.max(1, Math.min(n, 5)));
+  if (!ds.length) return "还没有做过梦";
+  return ds.map((d) => `[${d.day}] ${d.title}（${d.slug}）\n${d.body.replace(/\[\[|\]\]/g, "")}`).join("\n---\n");
+}
