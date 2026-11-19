@@ -117,6 +117,7 @@ export function nudgeSet(enabled: boolean, time: string): string {
 /** 今天的记账情况：手动记了几笔、Apple Pay 自动收了几笔还没分类 */
 export function todayState(now = Date.now()) {
   const rows = db.expensesBetween(localDayStart(now), now + 1);
-  return { manual: rows.filter((r) => r.source !== "wallet").length, walletUncategorized: rows.filter((r) => r.source === "wallet" && !r.category) };
+  const taps = db.eventsSince(localDayStart(now), 200).filter((e) => e.kind === "card_tap" && e.at <= now).length; // 刷了卡但没带金额的次数
+  return { manual: rows.filter((r) => r.source !== "wallet").length, walletUncategorized: rows.filter((r) => r.source === "wallet" && !r.category), taps, walletRows: rows.filter((r) => r.source === "wallet").length };
 }
 export const localClock = (now = Date.now()) => { const p = parts(now); return { today: dayKey(now), minutes: p.h * 60 + p.mi, month: p.mo, day: p.d, year: p.y }; };

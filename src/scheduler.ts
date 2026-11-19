@@ -122,6 +122,8 @@ async function dailyJobs(now: number): Promise<void> {
       const st = todayState(now);
       if (st.walletUncategorized.length) {
         await say(`${head}\n今天 Apple Pay 自动记了这几笔，还没分类：\n${st.walletUncategorized.map((e) => `- #${e.id} ${e.amount_minor}（${e.currency}，最小单位）${e.merchant}`).join("\n")}\n用一两句问她这几笔大概算什么分类（也问问今天有没有现金或别的花销没记）。她回答后用 expense_update 补分类。必须发，回复只能是要发给她的话本身。`, "今天 Apple Pay 自动记了几笔，还没分类，有空告诉我分别算什么？");
+      } else if (!st.manual && st.taps && !st.walletRows) {
+        await say(`${head}\n今天她刷了 ${st.taps} 次卡（交通卡之类），但卡片没把金额传过来，所以一笔都没记上。用一两句问她今天刷卡大概花了多少、去了哪儿（比如坐了什么线），她回答后用 expense_add 帮她记。别催，别说教。必须发，回复只能是要发给她的话本身。`, `今天刷了 ${st.taps} 次卡，但没记上金额，大概花了多少？`);
       } else if (!st.manual) {
         await say(`${head}\n现在是她设的记账提醒时间，今天她还没记过账。用一句话轻轻问一下今天有没有花钱没记（比如吃饭、交通），别催，别说教。必须发，回复只能是要发给她的话本身。`, "今天有花钱没记吗？");
       }

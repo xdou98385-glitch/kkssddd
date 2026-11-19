@@ -64,6 +64,7 @@ const KIND_TEXT: Record<string, (e: db.DeviceEvent) => string> = {
   charging_on: (e) => `开始充电${e.detail ? `（电量 ${e.detail}）` : ""}`,
   charging_off: (e) => `拔掉充电器${e.detail ? `（电量 ${e.detail}）` : ""}`,
   wake: () => "起床（关了闹钟）",
+  card_tap: (e) => `刷了一次卡${e.detail ? `（${e.detail}）` : ""}，没带金额`,
   arrive: (e) => `到达 ${e.app ?? e.detail ?? "某地"}`,
   leave: (e) => `离开 ${e.app ?? e.detail ?? "某地"}`,
   location: () => "位置更新（想知道在哪用 where_am_i）",

@@ -229,6 +229,11 @@ app.post("/api/expense", async (c) => {
   } catch { /* 空正文或格式不对就当没有，下面会报「没认出金额」并把收到的原文写进日志 */ }
   const merchant = String(b.merchant ?? b.Merchant ?? b["商家"] ?? c.req.query("merchant") ?? "");
   const amount = pickAmount(b, c.req.query("amount") ?? "");
+  // 金额是空的：多半是手动点了自动化（没有真实交易），或者这张卡（比如交通卡）的交易里不带金额。不报错，只记一次「刷了卡」，晚上它会问她大概花了多少
+  if (amount.trim() === "" && raw.trim() !== "") {
+    db.addEvent("card_tap", null, merchant || null);
+    return c.json({ ok: true, message: "这次没带金额，只记下了一次刷卡；晚上它会问你花了多少" });
+  }
   try { return c.json({ ok: true, message: walletAdd(amount, merchant, String(b.note ?? "")) }); } catch (err) {
     // 口令在网址里，不会出现在这里；正文只有金额和商家，可以记
     console.log(`expense: 记不进去：${(err as Error).message}；正文类型 ${ct || "（没有）"}；收到的正文 ${JSON.stringify(raw.slice(0, 300))}`);
