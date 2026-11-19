@@ -213,7 +213,11 @@ app.post("/api/expense", async (c) => {
   let b: Record<string, unknown> = {};
   const ct = c.req.header("content-type") ?? "";
   try { b = ct.includes("json") ? await c.req.json() : Object.fromEntries(Object.entries(await c.req.parseBody()).map(([k, v]) => [k, String(v)])); } catch { /* 空正文就当没有 */ }
-  try { return c.json({ ok: true, message: walletAdd(String(b.amount ?? c.req.query("amount") ?? ""), String(b.merchant ?? c.req.query("merchant") ?? ""), String(b.note ?? "")) }); } catch (err) { return c.json({ error: (err as Error).message }, 400); }
+  const amount = String(b.amount ?? c.req.query("amount") ?? "");
+  try { return c.json({ ok: true, message: walletAdd(amount, String(b.merchant ?? c.req.query("merchant") ?? ""), String(b.note ?? "")) }); } catch (err) {
+    console.log(`expense: 记不进去：${(err as Error).message}；收到的金额文字是 ${JSON.stringify(amount)}，正文类型 ${ct || "（没有）"}`); // 口令不在这里，金额和类型可以记
+    return c.json({ error: (err as Error).message }, 400);
+  }
 });
 
 app.get("/api/device/status", (c) => {
