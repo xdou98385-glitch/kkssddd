@@ -207,16 +207,32 @@ app.get("/api/expense", (c) => {
   try { return c.json({ ok: true, message: walletAdd(c.req.query("amount") ?? "", c.req.query("merchant") ?? "", c.req.query("note") ?? "") }); } catch (err) { return c.json({ error: (err as Error).message }, 400); }
 });
 
+// 快捷指令里「交易 → 金额」有时不是纯数字：可能是 "¥1,230"、数字、带币种的小对象，字段名大小写也可能不一样，这里都认
+function pickAmount(b: Record<string, unknown>, q: string): string {
+  for (const k of ["amount", "Amount", "AMOUNT", "金额", "value", "price", "total"]) {
+    let v: unknown = b[k];
+    if (v && typeof v === "object") { const o = v as Record<string, unknown>; v = o.value ?? o.amount ?? o.Amount ?? o.formatted ?? o.description ?? o.text ?? JSON.stringify(o); }
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+  }
+  return q;
+}
+
 // 同一个接收口的 POST 版：快捷指令里用「获取 URL 内容」→ 方法 POST → 请求正文选 JSON，填 amount / merchant 两个字段，不用担心商家名里的日文和空格要不要编码
 app.post("/api/expense", async (c) => {
   if (!checkDeviceToken(c.req.header("authorization")) && !checkRawToken(c.req.query("token"))) return c.json({ error: "unauthorized" }, 401);
   let b: Record<string, unknown> = {};
   const ct = c.req.header("content-type") ?? "";
-  try { b = ct.includes("json") ? await c.req.json() : Object.fromEntries(Object.entries(await c.req.parseBody()).map(([k, v]) => [k, String(v)])); } catch { /* 空正文就当没有 */ }
-  const amount = String(b.amount ?? c.req.query("amount") ?? "");
-  try { return c.json({ ok: true, message: walletAdd(amount, String(b.merchant ?? c.req.query("merchant") ?? ""), String(b.note ?? "")) }); } catch (err) {
-    console.log(`expense: 记不进去：${(err as Error).message}；收到的金额文字是 ${JSON.stringify(amount)}，正文类型 ${ct || "（没有）"}`); // 口令不在这里，金额和类型可以记
-    return c.json({ error: (err as Error).message }, 400);
+  let raw = "";
+  try {
+    raw = await c.req.text();
+    b = ct.includes("json") ? JSON.parse(raw) : Object.fromEntries(new URLSearchParams(raw));
+  } catch { /* 空正文或格式不对就当没有，下面会报「没认出金额」并把收到的原文写进日志 */ }
+  const merchant = String(b.merchant ?? b.Merchant ?? b["商家"] ?? c.req.query("merchant") ?? "");
+  const amount = pickAmount(b, c.req.query("amount") ?? "");
+  try { return c.json({ ok: true, message: walletAdd(amount, merchant, String(b.note ?? "")) }); } catch (err) {
+    // 口令在网址里，不会出现在这里；正文只有金额和商家，可以记
+    console.log(`expense: 记不进去：${(err as Error).message}；正文类型 ${ct || "（没有）"}；收到的正文 ${JSON.stringify(raw.slice(0, 300))}`);
+    return c.json({ error: (err as Error).message, hint: "没从请求里找到金额，看服务器日志里 expense: 那一行" }, 400);
   }
 });
 
