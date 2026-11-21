@@ -1,10 +1,14 @@
 // 微信读书（Agent Gateway）。接口约定：POST 一个 JSON，api_name 指定接口，业务参数平铺在同一层，必须带 skill_version。
 // 凭据只从环境变量 WEREAD_API_KEY 读，不要写进代码或提交到 git。
-const key = process.env.WEREAD_API_KEY ?? "";
+import { cfg, onConfigChange } from "./config.ts";
+const key = () => cfg("WEREAD_API_KEY");
 const url = process.env.WEREAD_URL ?? "https://i.weread.qq.com/api/agent/gateway";
 const SKILL_VERSION = "1.0.4";
 
-export const wereadEnabled = key !== "";
+export let wereadEnabled = false; // 设置页改了配置会重新计算
+const refresh = () => { wereadEnabled = key() !== ""; };
+onConfigChange(refresh);
+refresh();
 
 // 只开放只读接口
 export const WEREAD_APIS = [
@@ -33,7 +37,7 @@ const MAX_CHARS = 24000; // 回包太长会撑爆上下文，截断并提示
 async function gateway(body: Record<string, unknown>): Promise<any> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${key()}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(15000),
   });

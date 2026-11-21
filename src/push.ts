@@ -24,6 +24,7 @@ function vapid(): { publicKey: string; privateKey: string } {
 export const publicKey = () => vapid().publicKey;
 
 export interface PushPayload {
+  tag?: string; // 同 tag 的通知会互相替换；不写就是普通聊天通知
   title: string;
   body: string;
   url?: string;
