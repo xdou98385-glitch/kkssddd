@@ -10,6 +10,7 @@ import { fmtLocal } from "./schedule.ts";
 import { dueToday } from "./dates.ts";
 import { maybeWriteLetter } from "./letter.ts";
 import { maybeDream } from "./dream.ts";
+import { maybeBrowse } from "./browse.ts";
 import { getNudge, localClock, todayState } from "./expense.ts";
 
 const CHECKINS_PER_DAY = 3;
@@ -139,6 +140,7 @@ async function tick(): Promise<void> {
     await dailyJobs(Date.now());
     maybeWriteLetter(Date.now());
     maybeDream(Date.now());
+    maybeBrowse(Date.now());
   } catch (err) {
     console.error("scheduler:", err instanceof Error ? err.message : err);
   } finally {

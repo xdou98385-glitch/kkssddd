@@ -3,7 +3,8 @@ import * as db from "./db.ts";
 import { summarize } from "./claude.ts";
 import { readImage } from "./uploads.ts";
 import { recentDreamBlock } from "./dream.ts";
-import { DEFAULT_SYSTEM, DEVICE_GUIDE, DREAM_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, SHARE_GUIDE, WEREAD_GUIDE, XHS_GUIDE, DOUYIN_GUIDE, MUSIC_GUIDE, WEATHER_GUIDE, CALENDAR_GUIDE, MAIL_GUIDE, X_GUIDE, SCHEDULE_GUIDE, WEBSEARCH_GUIDE, SHOP_GUIDE, TAOBAO_GUIDE, LOCK_GUIDE, EXPENSE_GUIDE } from "./persona.ts";
+import { recentBrowseBlock } from "./browse.ts";
+import { BROWSE_GUIDE, DEFAULT_SYSTEM, DEVICE_GUIDE, DREAM_GUIDE, GAME_GUIDE, HONESTY_GUIDE, MEMORY_GUIDE, SHARE_GUIDE, WEREAD_GUIDE, XHS_GUIDE, DOUYIN_GUIDE, MUSIC_GUIDE, WEATHER_GUIDE, CALENDAR_GUIDE, MAIL_GUIDE, X_GUIDE, SCHEDULE_GUIDE, WEBSEARCH_GUIDE, SHOP_GUIDE, TAOBAO_GUIDE, LOCK_GUIDE, EXPENSE_GUIDE } from "./persona.ts";
 import { coreMemoryBlock } from "./tools.ts";
 import { memosEnabled } from "./memos.ts";
 import { wereadEnabled } from "./weread.ts";
@@ -32,6 +33,7 @@ export async function buildSystem(conv: db.Conversation): Promise<string> {
     HONESTY_GUIDE,
     GAME_GUIDE,
     DREAM_GUIDE,
+    webSearchSwitch() ? BROWSE_GUIDE : "",
     SCHEDULE_GUIDE,
     SHOP_GUIDE,
     LOCK_GUIDE,
@@ -51,6 +53,7 @@ export async function buildSystem(conv: db.Conversation): Promise<string> {
     xEnabled ? X_GUIDE : "",
     await coreMemoryBlock(),
     recentDreamBlock(),
+    recentBrowseBlock(),
     deviceEnabled ? recentSharesBlock() : "",
     conv.summary ? `此前对话的摘要（更早的内容已不在上下文里）：\n${conv.summary}` : "",
   ]

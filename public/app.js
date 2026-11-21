@@ -206,6 +206,7 @@ async function loadThread() {
   if (location.hash === "#memory") setPage("memory");
   if (location.hash === "#letters") setPage("letters");
   if (location.hash === "#dreams") setPage("dreams");
+  if (location.hash === "#browse") setPage("browse");
   els.model.value = data.conversation.model;
   state.hasMore = data.hasMore;
   if (!data.messages.length) return showEmpty();
@@ -1304,7 +1305,7 @@ document.addEventListener("keydown", (e) => {
 })();
 
 // ---- 页面切换：对话 / 电台 / 游戏（页面 id 仍叫 board，地址是 #board）----
-const PAGES = { chat: "Claude", radio: "电台", call: "通话", memory: "记忆", letters: "信箱", dreams: "梦", board: "游戏" };
+const PAGES = { chat: "Claude", radio: "电台", call: "通话", memory: "记忆", letters: "信箱", browse: "浏览", dreams: "梦", board: "游戏" };
 // 终端主题：点标题弹出目录。原来的主题用底部标签栏，这个点击不起作用
 $("menu-btn").addEventListener("click", (e) => { if (document.documentElement.dataset.theme === "classic") return; e.stopPropagation(); document.body.classList.toggle("menu-open"); });
 document.addEventListener("click", (e) => { if (!e.target.closest("#tabs")) document.body.classList.remove("menu-open"); });
@@ -1322,6 +1323,8 @@ function setPage(p) {
   $("memory").hidden = p !== "memory";
   $("letters").hidden = p !== "letters";
   $("dreams").hidden = p !== "dreams";
+  $("browse").hidden = p !== "browse";
+  if (p === "browse") loadBrowses();
   if (p === "dreams") loadDreams();
   if (p === "memory") loadMemories();
   if (p === "letters") loadLetters();
@@ -1486,6 +1489,57 @@ $("lt-mail").onchange = () => api("/letters/config", { method: "PUT", body: { em
 $("lt-now").onclick = async () => {
   try { await api("/letters/write", { method: "POST" }); loadLetters(); } catch (err) { ltNote(err.message, true); }
 };
+
+// ---- 浏览：它自己上网看的东西，像一份 shell history ----
+const br = { timer: null };
+const brNote = (t, bad = false) => setStatus("br-note", t, bad);
+function brRender(list) {
+  const root = $("br-list");
+  if (!list.length) { root.replaceChildren(); const p = document.createElement("p"); p.className = "br-note"; p.textContent = "$ history\n（空）打开上面的开关，它会在你不忙的时候自己去看；也可以现在让它去一次。"; root.append(p); return; }
+  root.replaceChildren(...list.map((b) => {
+    const a = document.createElement("article");
+    a.className = "br";
+    const line = (cls, text) => { const x = document.createElement("div"); x.className = cls; x.textContent = text; return x; };
+    const when = new Date(b.created_at);
+    const stamp = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())} ${pad(when.getHours())}:${pad(when.getMinutes())}`;
+    let searches = [];
+    try { searches = JSON.parse(b.searches); } catch { /* 没有记录 */ }
+    if (b.status === "writing") { a.append(line("br-prompt", "$ browse --free-time"), line("br-meta", stamp + "  status: reading …")); return a; }
+    if (b.status === "failed") { a.append(line("br-prompt", "$ browse --free-time"), line("br-meta", stamp + "  status: ERR " + (b.error || ""))); return a; }
+    a.append(line("br-prompt", "$ search " + searches.map((s) => JSON.stringify(s.query)).join(" ")), line("br-meta", stamp + (b.auto ? "  (它自己去的)" : "  (你让它去的)")), line("br-title", "# " + b.topic), line("br-body", b.note));
+    const links = searches.flatMap((s) => s.results).filter((r, i, arr) => arr.findIndex((x) => x.url === r.url) === i).slice(0, 6);
+    if (links.length) {
+      const box = document.createElement("div");
+      box.className = "br-src";
+      box.append("sources:");
+      for (const r of links) {
+        const l = document.createElement("a");
+        l.href = r.url; l.target = "_blank"; l.rel = "noopener noreferrer";
+        let host = r.url;
+        try { host = new URL(r.url).hostname.replace(/^www\./, ""); } catch { /* 用原文 */ }
+        l.textContent = (r.title || host).slice(0, 60) + "  · " + host;
+        box.append(l);
+      }
+      a.append(box);
+    }
+    return a;
+  }));
+}
+async function loadBrowses() {
+  clearTimeout(br.timer);
+  try {
+    const d = await api("/browses");
+    $("br-on").checked = d.config.enabled;
+    brRender(d.browses);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const n = d.browses.filter((b) => b.auto && b.status !== "failed" && b.created_at >= today.getTime()).length;
+    if (d.browses.some((b) => b.status === "writing")) { brNote("正在看…要一两分钟"); br.timer = setTimeout(loadBrowses, 4000); }
+    else if (!d.searchOn) brNote("联网搜索没开：设置 → 连接 → 联网搜索，填 on，它才能上网。", true);
+    else brNote(`自己去的：今天 ${n}/${d.limit} 次`);
+  } catch (err) { brNote("读不到：" + err.message, true); }
+}
+$("br-on").onchange = () => api("/browses/config", { method: "PUT", body: { enabled: $("br-on").checked } }).then(() => { brNote($("br-on").checked ? "开了：你不忙的时候（学习模式里，或超过一小时没找它），每天最多自己去两次" : "关了"); }).catch((e) => brNote(e.message, true));
+$("br-now").onclick = async () => { try { await api("/browses/run", { method: "POST" }); loadBrowses(); } catch (err) { brNote(err.message, true); } };
 
 // ---- 梦：像一份损坏的日志，[[关键句]] 是加密块，点一下才解开 ----
 const dr = { timer: null };

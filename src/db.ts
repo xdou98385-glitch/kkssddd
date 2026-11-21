@@ -151,6 +151,19 @@ db.exec(`
   );
 `);
 db.prepare("UPDATE dreams SET status = 'failed', error = '服务重启，这个梦没做完' WHERE status = 'writing'").run();
+db.exec(`
+  CREATE TABLE IF NOT EXISTS browses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '',
+    searches TEXT NOT NULL DEFAULT '[]',
+    auto INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error TEXT,
+    created_at INTEGER NOT NULL
+  );
+`);
+db.prepare("UPDATE browses SET status = 'failed', error = '服务重启，这次没看完' WHERE status = 'writing'").run();
 // 上次进程被重启时还没写完的电台节目，标成失败，免得一直转圈
 db.prepare("UPDATE episodes SET status = 'failed', error = '服务重启，这期没做完' WHERE status IN ('writing', 'voicing')").run();
 ensureColumn("messages", "kind", "TEXT"); // 'proactive' = Claude 主动发的；'podcast' = 她点「来一期」生成的微播客
@@ -459,6 +472,18 @@ export const listDreams = (limit: number) => db.prepare("SELECT * FROM dreams OR
 /** 某个时间段内的对话原文（两边都算），给做梦挑素材用 */
 export const messagesBetween = (from: number, to: number, limit = 400) =>
   db.prepare("SELECT role, content, created_at FROM messages WHERE created_at >= ? AND created_at < ? ORDER BY id DESC LIMIT ?").all(from, to, limit) as unknown as { role: string; content: string; created_at: number }[];
+
+// ---- 它自己上网 ----
+export interface Browse { id: number; topic: string; note: string; searches: string; auto: number; status: "writing" | "ready" | "failed"; error: string | null; created_at: number }
+export const createBrowse = (auto: boolean): number => Number(db.prepare("INSERT INTO browses (auto, status, created_at) VALUES (?, 'writing', ?)").run(auto ? 1 : 0, now()).lastInsertRowid);
+export function updateBrowse(id: number, f: Partial<Omit<Browse, "id" | "created_at">>): void {
+  const keys = Object.keys(f) as (keyof typeof f)[];
+  if (!keys.length) return;
+  db.prepare(`UPDATE browses SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`).run(...keys.map((k) => f[k] ?? null), id);
+}
+export const listBrowses = (limit: number) => db.prepare("SELECT * FROM browses ORDER BY id DESC LIMIT ?").all(limit) as unknown as Browse[];
+export const countAutoBrowsesSince = (since: number) => Number((db.prepare("SELECT COUNT(*) AS n FROM browses WHERE auto = 1 AND status != 'failed' AND created_at >= ?").get(since) as { n: number }).n);
+export const lastUserMessageAt = (): number => Number((db.prepare("SELECT MAX(created_at) AS t FROM messages WHERE role = 'user'").get() as { t: number | null }).t ?? 0);
 
 /** 她最后一条消息之后，Claude 连着发了几条她还没回的主动消息，以及最后一条是什么时候 */
 export function trailingProactive(conversationId: string): { count: number; lastAt: number } {

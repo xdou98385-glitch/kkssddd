@@ -109,6 +109,15 @@
       <div id="dr-list"></div>
     </section>
 
+    <section id="browse" hidden aria-label="浏览">
+      <div class="br-ctl">
+        <label><input type="checkbox" id="br-on"> 让它在我不忙的时候自己上网</label>
+        <button id="br-now" type="button">现在去看一下</button>
+      </div>
+      <p id="br-note" class="br-note"></p>
+      <div id="br-list"></div>
+    </section>
+
     <div id="pending"></div>
     <div id="attachments"></div>
     <form id="composer">
@@ -129,6 +138,7 @@
       <button type="button" data-en="call" data-page="call" id="tab-call" hidden>通话</button>
       <button type="button" data-en="memory" data-page="memory" id="tab-memory" hidden>记忆</button>
       <button type="button" data-en="letters" data-page="letters" id="tab-letters" hidden>信箱</button>
+      <button type="button" data-en="history" data-page="browse">浏览</button>
       <button type="button" data-en="dreams" data-page="dreams">梦</button>
       <button type="button" data-en="games" data-page="board">游戏</button>
     </nav>

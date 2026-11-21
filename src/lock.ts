@@ -128,6 +128,8 @@ const studyCfg = (): StudyCfg => { try { return { apps: [], minutes: 90, focus: 
 interface StudySession { start: number; until: number; end?: number; how?: "expired" | "manual"; offAt?: number } // offAt：她提前关掉专注模式的时间（锁不解开，但学习时长算到这里）
 const readSessions = (): StudySession[] => { try { return JSON.parse(db.getSetting("study_sessions") || "[]"); } catch { return []; } };
 const writeSessions = (s: StudySession[]) => db.setSetting("study_sessions", JSON.stringify(s.slice(-80)));
+/** 她现在在学习模式里吗（给「自己上网」判断她忙不忙用） */
+export const studyActiveNow = (now = Date.now()): boolean => Boolean(activeSession(now));
 const activeSession = (now: number): StudySession | null => { const l = readSessions().at(-1); return l && !l.end && l.until > now ? l : null; };
 
 function closeExpired(now: number): void {

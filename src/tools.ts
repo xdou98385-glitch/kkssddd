@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { dreamsText } from "./dream.ts";
+import { browseText } from "./browse.ts";
 import { load as gomokuLoad, viewText as gomokuViewText } from "./gomoku.ts";
 import { CATS as MEM_CATS, coreMemories, memosEnabled, saveMemo, searchMemos } from "./memos.ts";
 import { WEREAD_APIS, callWeRead, wereadEnabled } from "./weread.ts";
@@ -457,6 +458,13 @@ const dreamTools: Tool[] = [{
   label: () => "回想了一下梦",
 }];
 
+// 它自己上网看的东西：她问起时才用
+const browseTools: Tool[] = [{
+  def: { name: "browse_view", description: "看你最近在她不需要你的时候自己上网看过的东西（带笔记和来源）。她问你最近看了什么、在关注什么时先调用。", input_schema: { type: "object", properties: {}, additionalProperties: false } },
+  run: async () => browseText(5),
+  label: () => "回想了一下自己看的东西",
+}];
+
 // 重要日期簿
 const dateTools: Tool[] = [
   {
@@ -677,6 +685,7 @@ export const getTools = (): Tool[] => capStrict([
   ...expenseTools,
   ...dateTools,
   ...dreamTools,
+  ...browseTools,
   ...lockTools,
   ...gameTools,
   ...(memosEnabled ? memoryTools : []),

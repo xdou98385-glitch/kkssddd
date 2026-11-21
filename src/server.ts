@@ -21,6 +21,7 @@ import { latestBackupPath, listBackups, runBackup, startBackups } from "./backup
 import * as gm from "./gomoku.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { startPodcast } from "./podcast.ts";
+import { DAILY_SESSIONS, getBrowseCfg, setBrowseCfg, startBrowse } from "./browse.ts";
 import { getDreamCfg, setDreamCfg, startDream } from "./dream.ts";
 import { emailLetter, getLetterCfg, setLetterCfg, startLetter } from "./letter.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
@@ -414,6 +415,11 @@ app.get("/api/letters", (c) => c.json({ letters: db.listLetters(60), config: get
 app.put("/api/letters/config", async (c) => { const b = await c.req.json(); return c.json({ config: setLetterCfg({ enabled: b.enabled, email: b.email }) }); });
 app.post("/api/letters/write", (c) => { const r = startLetter(); return "error" in r ? c.json(r, 409) : c.json(r); });
 app.post("/api/letters/:id/email", async (c) => { await emailLetter(Number(c.req.param("id"))); const l = db.getLetter(Number(c.req.param("id"))); return c.json({ ok: Boolean(l?.emailed_at), error: l?.email_error ?? null }); });
+
+// ---- 它自己上网 ----
+app.get("/api/browses", (c) => c.json({ browses: db.listBrowses(60), config: getBrowseCfg(), limit: DAILY_SESSIONS, searchOn: webSearchSwitch() }));
+app.put("/api/browses/config", async (c) => c.json({ config: setBrowseCfg(Boolean((await c.req.json()).enabled)) }));
+app.post("/api/browses/run", (c) => { const r = startBrowse(false); return "error" in r ? c.json(r, 409) : c.json(r); });
 
 // ---- 梦 ----
 app.get("/api/dreams", (c) => c.json({ dreams: db.listDreams(60), config: getDreamCfg() }));

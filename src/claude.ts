@@ -39,19 +39,21 @@ export async function streamChat(opts: {
   onTool: (label: string, name: string) => void;
   effort?: "low" | "medium" | "high"; // 覆盖模型默认的 effort（模型本身不支持 effort 时无效）
   tag?: string; // 日志里标注这次调用是干嘛的（chat / proactive）
-}): Promise<{ text: string; finalText: string; stopReason: string | null; toolsUsed: string[] }> {
+  webOnly?: boolean; // 只给联网搜索这一个工具（自己上网那一轮用：没有任何能改东西的工具）
+}): Promise<{ text: string; finalText: string; stopReason: string | null; toolsUsed: string[]; searches: { query: string; results: { title: string; url: string }[] }[] }> {
   const { model } = opts;
   const messages: Anthropic.Beta.BetaMessageParam[] = [...opts.messages];
   const toolsUsed: string[] = []; // 真正成功执行过的工具（由代码记录，不是模型自己说的）
   let text = ""; // 整条回复，含调用工具前说的话
   let finalText = ""; // 只有最后一轮（真正的回复）
   let stopReason: string | null = null;
+  const searchLog: { query: string; results: { title: string; url: string }[] }[] = []; // 真实的搜索词和 Anthropic 返回的来源（不是模型自己写的）
   const used = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }; // 本次所有轮次的 token 合计
   const logUsage = () =>
     console.log(`usage: ${opts.tag ?? "chat"} ${model.id} in=${used.input} cache_read=${used.cacheRead} cache_write=${used.cacheWrite} out=${used.output}`);
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
-    const toolList = getTools();
+    const toolList = opts.webOnly ? [] : getTools();
     const serverTools = webSearchTools(); // 联网搜索（Anthropic 那边执行），没开或今天用完了就是空的
     const stream = client.beta.messages.stream(
       {
@@ -90,7 +92,7 @@ export async function streamChat(opts: {
       final = await stream.finalMessage();
     } catch (err) {
       // 用户中途停止：保留已生成的部分
-      if (opts.signal.aborted) { logUsage(); return { text, finalText, stopReason: "aborted", toolsUsed }; }
+      if (opts.signal.aborted) { logUsage(); return { text, finalText, stopReason: "aborted", toolsUsed, searches: searchLog }; }
       throw err;
     }
     used.input += final.usage.input_tokens;
@@ -104,6 +106,14 @@ export async function streamChat(opts: {
       noteWebSearches(searches);
       if (!toolsUsed.includes("web_search")) toolsUsed.push("web_search");
       for (const b of final.content) if (b.type === "server_tool_use" && b.name === "web_search") opts.onTool(`搜了网页：${String((b.input as { query?: string })?.query ?? "").slice(0, 40)}`, "web_search");
+    }
+    {
+      const queries = new Map<string, string>();
+      for (const b of final.content as any[]) if (b.type === "server_tool_use" && b.name === "web_search") queries.set(String(b.id), String(b.input?.query ?? ""));
+      for (const b of final.content as any[]) {
+        if (b.type !== "web_search_tool_result" || !Array.isArray(b.content)) continue;
+        searchLog.push({ query: queries.get(String(b.tool_use_id)) ?? "", results: b.content.filter((r: any) => r?.type === "web_search_result").map((r: any) => ({ title: String(r.title ?? ""), url: String(r.url ?? "") })) });
+      }
     }
     // 服务端工具跑太久时会先停一下（pause_turn）：把已有内容原样带回，让它接着做
     if (stopReason === "pause_turn") {
@@ -137,7 +147,7 @@ export async function streamChat(opts: {
     messages.push({ role: "user", content: results });
   }
   logUsage();
-  return { text, finalText, stopReason, toolsUsed };
+  return { text, finalText, stopReason, toolsUsed, searches: searchLog };
 }
 
 const SUMMARY_MODEL = "claude-haiku-4-5";

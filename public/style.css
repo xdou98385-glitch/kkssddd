@@ -238,6 +238,7 @@ details.conn-item > .conn { border-top: 0; padding: 0 2px 16px; }
 
 /* ---- 页面切换 ---- */
 body[data-page="memory"] :is(#messages, #attachments, #pending, #composer),
+body[data-page="browse"] :is(#messages, #attachments, #pending, #composer),
 body[data-page="dreams"] :is(#messages, #attachments, #pending, #composer),
 body[data-page="letters"] :is(#messages, #attachments, #pending, #composer),
 body[data-page="radio"] :is(#messages, #attachments, #pending, #composer),
@@ -525,3 +526,23 @@ body[data-page="dreams"]::after { content: ""; position: fixed; inset: 0; pointe
 .dr-trace { margin-top: 8px; padding: 10px 12px; border-left: 1px solid var(--hairline); color: var(--muted); font-size: 12px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
 .dr-trace[hidden] { display: none; }
 .dr-ctl select { padding: 5px 8px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 2px; color: var(--text); font: 12.5px/1.4 inherit; font-family: inherit; }
+
+html:not([data-theme="classic"]) body[data-page="browse"] header h1::before { content: "claude@kay:~/history ▾"; }
+
+/* ---- 浏览：它自己上网看的东西，像 shell history ---- */
+#browse { flex: 1; overflow-y: auto; padding: 14px 18px 24px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", monospace; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+#browse[hidden] { display: none; }
+.br-ctl { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: space-between; font-size: 13px; color: var(--text); }
+.br-ctl label { display: flex; gap: 8px; align-items: center; }
+.br-ctl input { accent-color: var(--acc, var(--ink)); }
+.br-ctl button { padding: 5px 12px; background: transparent; border: 1px solid var(--hairline); border-radius: 2px; color: var(--text); font: 12.5px/1.4 inherit; font-family: inherit; }
+.br-note { margin: 8px 0 0; min-height: 1em; font-size: 12.5px; color: var(--muted); white-space: pre-wrap; }
+.br-note.bad { color: var(--danger); }
+#br-list { margin-top: 16px; display: grid; gap: 26px; }
+.br-prompt { color: var(--acc, var(--text)); font-size: 13px; word-break: break-all; }
+.br-meta { margin: 4px 0 10px; color: var(--muted); font-size: 11.5px; }
+.br-title { margin-bottom: 8px; color: var(--text); font-size: 15px; font-weight: 600; }
+.br-body { white-space: pre-wrap; word-break: break-word; font-size: 15px; line-height: 1.8; color: var(--text); }
+.br-src { margin-top: 10px; display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+.br-src a { color: var(--acc, var(--text)); text-decoration: none; word-break: break-all; }
+.br-src a::before { content: "↳ "; color: var(--muted); }
