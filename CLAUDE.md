@@ -20,7 +20,7 @@ src/persona.ts    默认人设（来自她在 claude.ai 的偏好）+ 各功能�
 src/config.ts     设置页「连接」：MEMOS_URL/MEMOS_TOKEN/WEREAD_API_KEY/DEVICE_TOKEN/ELEVENLABS_API_KEY/ELEVENLABS_VOICE_ID 存在 settings 表（键 cfg:名字），优先于 .env，清空退回 .env；各模块用 cfg() 现读，`memosEnabled` 等是 export let 实时绑定，改完 notifyConfigChanged() 立即生效不用重启；getTools() 每次重算。密钥只写不读（只有 DEVICE_TOKEN 可点「查看」）。ANTHROPIC_API_KEY 和 APP_PASSWORD 故意仍只在 .env。
 src/tools.ts      给 Claude 的工具：sudoku_*、search/save_memory、weread、device_activity
 src/memos.ts      Memos 记忆（/api/v1/memos，Bearer token，标签 #claude 是它写的，#core 每次对话自动注入）
-src/weread.ts     微信读书网关（只读，参数平铺，skill_version 1.0.4，401/upgrade_info 照实报告）
+src/weread.ts     微信读书网关（只读，参数平铺，skill_version 跟官方 Tencent/WeChatReading 的 skills/SKILL.md 走，2026-11-25 改成 1.0.6；401 照实报告；**upgrade_info 现在是非阻塞提示**——官方 2026-11-17 提交 61c3372 改的：同一回包里的业务数据照常用，不要停、不要重试，只简短提示用户有新版。以前我们看到它就 throw、把数据丢了，所以她那边只看到「skill 需要更新」。现在数据照给，回包里加 _系统提示，设置页连接状态显示一句。官方文档里已没有 /discover/interact/type3；1.0.5/1.0.6 的参数差异没读 diff，不确定时让 Claude 调 /_list）
 src/sudoku.ts     数独出题（唯一解）、提示（唯一候选数/唯一位置）
 src/push.ts       Web Push（VAPID 自动生成存库，sub 默认用站点 https 地址）
 src/proactive.ts  主动消息心跳。规则：安静时段、刚聊过 45 分钟内不发、每天上限（0=不限）、她没回时间隔拉长（0 条没回≥1h，1 条≥4h，2 条≥12h，3 条≥24h，连着 4 条没回就停到她先说话；trailingProactive 统计）。节拍：Claude 在回复末尾写 [next: 45m]/[next: 3h]（parseNext 取出并去掉，夹在 30 分钟~8 小时，下限 PROACTIVE_MIN_WAKE_MIN），没写用 PROACTIVE_EVERY_MIN(90)；被规则挡住没调 Claude 的每 15 分钟再看一次（不花额度）；下次醒来时间存 settings.proactive_next，每 60 秒检查
