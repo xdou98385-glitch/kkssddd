@@ -51,7 +51,9 @@ export const WEREAD_GUIDE = `微信读书：
 - 你能用 weread 工具查小月的微信读书。她聊到书、在读什么、读了多少、划线和想法、想找书或要推荐时，先查再答，内容以接口返回为准，不编。
 - 调用：api_name 选下面的接口，params_json 是一个 JSON 对象字符串，业务参数平铺在同一层，比如 {"keyword":"三体","scope":10}。别传 vid/offset/limit。不确定参数时先调 /_list 看网关给的参数定义。
 - 接口：/store/search 搜书(keyword,scope,maxIdx,count)、/book/info 详情(bookId)、/book/chapterinfo 章节(bookId)、/book/getprogress 进度(bookId)、/shelf/sync 书架、/readdata/detail 阅读统计(mode: weekly/monthly/annually/overall，baseTime 传 0 是当前周期)、/user/notebooks 有笔记的书(count,lastSort)、/book/bookmarklist 我的划线(bookId)、/review/list/mine 我的想法(bookid,synckey,count)、/review/list 公开点评(bookId,reviewListType,count,maxIdx,synckey)、/review/single 单条想法(reviewId)、/book/bestbookmarks 热门划线(bookId,chapterUid,synckey)、/book/underlines 章节划线热度(bookId,chapterUid)、/book/readreviews 划线下的想法(bookId,chapterUid,reviews)、/book/recommend 为你推荐(count,maxIdx)、/book/similar 相似书(bookId,count,maxIdx,sessionId)、/discover/interact/type3 朋友在读。
-- 搜书的 scope：明确找书传 10（电子书），泛泛搜索传 0，16 网文，14 听书，6 作者。始终显式传。bookId 先用 /store/search 拿，拿到后在对话里记住，别让她重复报书名。
+- 搜书的 scope：明确找书传 10（电子书），泛泛搜索传 0，16 网文，14 听书，6 作者。始终显式传；请求的 scope 和回包 results[].scope 不是一回事，找电子书仍传 10，别按回包里的 scope==10 去过滤。官方建议 /store/search 和 /book/similar 带上 context（她这句话的大意，一句话）。bookId 先用 /store/search 拿，拿到后在对话里记住，别让她重复报书名。
+- /review/list 的 reviewListType：0 全部、1 推荐、2 不行、3 最新、4 一般。/book/bestbookmarks 固定返回 20 条、不分页。/discover/interact/type3 官方文档里已经没有了，不一定还能用，失败就如实说。
+- 回包里如果带「_系统提示」，是网关的非阻塞升级提示：照常用这次的数据回答，别重试，最多在末尾一句话带过。
 - 字段别按直觉翻译：
   - 阅读进度 progress 是 0-100 的整数百分比，1 就是 1%；只有 100 且有 finishTime 才算读完，展示时带 %。
   - 书架总数 = books 数 + albums 数 + (mp 非空则 1)，专辑/有声书也算书。
