@@ -40,6 +40,7 @@ export async function streamChat(opts: {
   effort?: "low" | "medium" | "high"; // 覆盖模型默认的 effort（模型本身不支持 effort 时无效）
   tag?: string; // 日志里标注这次调用是干嘛的（chat / proactive）
   webOnly?: boolean; // 只给联网搜索这一个工具（自己上网那一轮用：没有任何能改东西的工具）
+  toolAllow?: string[]; // 只给这几个名字的工具（再加联网搜索），其余一律不给；自己上网时用来放行「只读」的几个
 }): Promise<{ text: string; finalText: string; stopReason: string | null; toolsUsed: string[]; searches: { query: string; results: { title: string; url: string }[] }[] }> {
   const { model } = opts;
   const messages: Anthropic.Beta.BetaMessageParam[] = [...opts.messages];
@@ -53,7 +54,7 @@ export async function streamChat(opts: {
     console.log(`usage: ${opts.tag ?? "chat"} ${model.id} in=${used.input} cache_read=${used.cacheRead} cache_write=${used.cacheWrite} out=${used.output}`);
 
   for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
-    const toolList = opts.webOnly ? [] : getTools();
+    const toolList = opts.toolAllow ? getTools().filter((t) => opts.toolAllow!.includes(t.def.name)) : opts.webOnly ? [] : getTools();
     const serverTools = webSearchTools(); // 联网搜索（Anthropic 那边执行），没开或今天用完了就是空的
     const stream = client.beta.messages.stream(
       {

@@ -21,7 +21,7 @@ import { latestBackupPath, listBackups, runBackup, startBackups } from "./backup
 import * as gm from "./gomoku.ts";
 import { currentOrNew, generate, place, publicState, saveGame, type Difficulty } from "./sudoku.ts";
 import { startPodcast } from "./podcast.ts";
-import { DAILY_SESSIONS, getBrowseCfg, setBrowseCfg, startBrowse } from "./browse.ts";
+import { PER_DAY_OPTIONS, getBrowseCfg, setBrowseCfg, startBrowse } from "./browse.ts";
 import { getDreamCfg, setDreamCfg, startDream } from "./dream.ts";
 import { emailLetter, getLetterCfg, setLetterCfg, startLetter } from "./letter.ts";
 import { CallError, MAX_CALL_MIN, callEnabled, callTurn, transcribe } from "./call.ts";
@@ -417,8 +417,8 @@ app.post("/api/letters/write", (c) => { const r = startLetter(); return "error" 
 app.post("/api/letters/:id/email", async (c) => { await emailLetter(Number(c.req.param("id"))); const l = db.getLetter(Number(c.req.param("id"))); return c.json({ ok: Boolean(l?.emailed_at), error: l?.email_error ?? null }); });
 
 // ---- 它自己上网 ----
-app.get("/api/browses", (c) => c.json({ browses: db.listBrowses(60), config: getBrowseCfg(), limit: DAILY_SESSIONS, searchOn: webSearchSwitch() }));
-app.put("/api/browses/config", async (c) => c.json({ config: setBrowseCfg(Boolean((await c.req.json()).enabled)) }));
+app.get("/api/browses", (c) => c.json({ browses: db.listBrowses(60), config: getBrowseCfg(), limit: getBrowseCfg().perDay, options: PER_DAY_OPTIONS, searchOn: webSearchSwitch() }));
+app.put("/api/browses/config", async (c) => { const b = await c.req.json(); return c.json({ config: setBrowseCfg({ enabled: b.enabled, perDay: b.perDay, when: b.when, social: b.social }) }); });
 app.post("/api/browses/run", (c) => { const r = startBrowse(false); return "error" in r ? c.json(r, 409) : c.json(r); });
 
 // ---- 梦 ----

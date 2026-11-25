@@ -546,3 +546,9 @@ html:not([data-theme="classic"]) body[data-page="browse"] header h1::before { co
 .br-src { margin-top: 10px; display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
 .br-src a { color: var(--acc, var(--text)); text-decoration: none; word-break: break-all; }
 .br-src a::before { content: "↳ "; color: var(--muted); }
+
+.br-opts { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; color: var(--text); }
+.br-opts label { display: flex; gap: 6px; align-items: center; }
+.br-opts select { padding: 4px 8px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 2px; color: var(--text); font: 12.5px/1.4 inherit; font-family: inherit; }
+.br-opts input { accent-color: var(--acc, var(--ink)); }
+.br-opts .br-social { flex-basis: 100%; }

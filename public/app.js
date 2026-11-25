@@ -1506,7 +1506,11 @@ function brRender(list) {
     try { searches = JSON.parse(b.searches); } catch { /* 没有记录 */ }
     if (b.status === "writing") { a.append(line("br-prompt", "$ browse --free-time"), line("br-meta", stamp + "  status: reading …")); return a; }
     if (b.status === "failed") { a.append(line("br-prompt", "$ browse --free-time"), line("br-meta", stamp + "  status: ERR " + (b.error || ""))); return a; }
-    a.append(line("br-prompt", "$ search " + searches.map((s) => JSON.stringify(s.query)).join(" ")), line("br-meta", stamp + (b.auto ? "  (它自己去的)" : "  (你让它去的)")), line("br-title", "# " + b.topic), line("br-body", b.note));
+    let tools = [];
+    try { tools = JSON.parse(b.tools || "[]"); } catch { /* 没有记录 */ }
+    const TOOL_NAME = { dy_feed: "抖音推荐", dy_search: "抖音搜索", dy_work: "抖音作品", dy_likes: "抖音点赞", dy_comments: "抖音评论", dy_collects: "抖音收藏", x_feed: "X 时间线", x_search: "X 搜索", x_tweet: "X 推文", x_user: "X 用户", x_bookmarks: "X 书签", weread: "微信读书", xhs_search: "小红书搜索", xhs_feed: "小红书推荐", xhs_note: "小红书笔记", music_recent: "最近听的歌", music_top: "常听的歌", search_memories: "记忆" };
+    const cmd = [...searches.map((s) => JSON.stringify(s.query)), ...tools.map((t) => "@" + (TOOL_NAME[t] || t))].join(" ");
+    a.append(line("br-prompt", "$ look " + cmd), line("br-meta", stamp + (b.auto ? "  (它自己去的)" : "  (你让它去的)")), line("br-title", "# " + b.topic), line("br-body", b.note));
     const links = searches.flatMap((s) => s.results).filter((r, i, arr) => arr.findIndex((x) => x.url === r.url) === i).slice(0, 6);
     if (links.length) {
       const box = document.createElement("div");
@@ -1530,15 +1534,23 @@ async function loadBrowses() {
   try {
     const d = await api("/browses");
     $("br-on").checked = d.config.enabled;
+    if (!$("br-perday").options.length) $("br-perday").innerHTML = d.options.map((n) => `<option value="${n}">${n}</option>`).join("");
+    $("br-perday").value = String(d.config.perDay);
+    $("br-when").value = d.config.when;
+    $("br-social").checked = d.config.social;
     brRender(d.browses);
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const n = d.browses.filter((b) => b.auto && b.status !== "failed" && b.created_at >= today.getTime()).length;
     if (d.browses.some((b) => b.status === "writing")) { brNote("正在看…要一两分钟"); br.timer = setTimeout(loadBrowses, 4000); }
     else if (!d.searchOn) brNote("联网搜索没开：设置 → 连接 → 联网搜索，填 on，它才能上网。", true);
-    else brNote(`自己去的：今天 ${n}/${d.limit} 次`);
+    else brNote(`自己去的：今天 ${n}/${d.limit} 次。次数越多越花钱（每次约几美分，是我的估计），建议先从 1 到 2 次开始，去 Anthropic Console 看实际用量再调。`);
   } catch (err) { brNote("读不到：" + err.message, true); }
 }
-$("br-on").onchange = () => api("/browses/config", { method: "PUT", body: { enabled: $("br-on").checked } }).then(() => { brNote($("br-on").checked ? "开了：你不忙的时候（学习模式里，或超过一小时没找它），每天最多自己去两次" : "关了"); }).catch((e) => brNote(e.message, true));
+const brSave = (body, msg) => api("/browses/config", { method: "PUT", body }).then(() => { brNote(msg); return loadBrowses(); }).catch((e) => brNote(e.message, true));
+$("br-on").onchange = () => brSave({ enabled: $("br-on").checked }, $("br-on").checked ? "开了" : "关了");
+$("br-perday").onchange = () => brSave({ perDay: Number($("br-perday").value) }, "改好了");
+$("br-when").onchange = () => brSave({ when: $("br-when").value }, "改好了");
+$("br-social").onchange = () => brSave({ social: $("br-social").checked }, $("br-social").checked ? "开了：下次起它会只读地看你的抖音、X、读书" : "关了");
 $("br-now").onclick = async () => { try { await api("/browses/run", { method: "POST" }); loadBrowses(); } catch (err) { brNote(err.message, true); } };
 
 // ---- 梦：像一份损坏的日志，[[关键句]] 是加密块，点一下才解开 ----

@@ -163,6 +163,7 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 `);
+ensureColumn("browses", "tools", "TEXT NOT NULL DEFAULT '[]'"); // JSON：这次真正用过的她的工具（系统记录）
 db.prepare("UPDATE browses SET status = 'failed', error = '服务重启，这次没看完' WHERE status = 'writing'").run();
 // 上次进程被重启时还没写完的电台节目，标成失败，免得一直转圈
 db.prepare("UPDATE episodes SET status = 'failed', error = '服务重启，这期没做完' WHERE status IN ('writing', 'voicing')").run();
@@ -474,7 +475,7 @@ export const messagesBetween = (from: number, to: number, limit = 400) =>
   db.prepare("SELECT role, content, created_at FROM messages WHERE created_at >= ? AND created_at < ? ORDER BY id DESC LIMIT ?").all(from, to, limit) as unknown as { role: string; content: string; created_at: number }[];
 
 // ---- 它自己上网 ----
-export interface Browse { id: number; topic: string; note: string; searches: string; auto: number; status: "writing" | "ready" | "failed"; error: string | null; created_at: number }
+export interface Browse { id: number; topic: string; note: string; searches: string; tools: string; auto: number; status: "writing" | "ready" | "failed"; error: string | null; created_at: number }
 export const createBrowse = (auto: boolean): number => Number(db.prepare("INSERT INTO browses (auto, status, created_at) VALUES (?, 'writing', ?)").run(auto ? 1 : 0, now()).lastInsertRowid);
 export function updateBrowse(id: number, f: Partial<Omit<Browse, "id" | "created_at">>): void {
   const keys = Object.keys(f) as (keyof typeof f)[];

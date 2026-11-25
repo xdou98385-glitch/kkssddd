@@ -111,8 +111,13 @@
 
     <section id="browse" hidden aria-label="浏览">
       <div class="br-ctl">
-        <label><input type="checkbox" id="br-on"> 让它在我不忙的时候自己上网</label>
+        <label><input type="checkbox" id="br-on"> 让它自己上网</label>
         <button id="br-now" type="button">现在去看一下</button>
+      </div>
+      <div class="br-opts">
+        <label>每天最多去 <select id="br-perday"></select> 次</label>
+        <label>什么时候去 <select id="br-when"><option value="idle">我不忙的时候</option><option value="any">随时</option></select></label>
+        <label class="br-social"><input type="checkbox" id="br-social"> 也让它看我的抖音、X、读书（只读）</label>
       </div>
       <p id="br-note" class="br-note"></p>
       <div id="br-list"></div>
