@@ -67,7 +67,10 @@ def run(cmd: str, b: dict):
     token, ct0 = str(b.get("auth_token") or "").strip(), str(b.get("ct0") or "").strip()
     if not token or not ct0:
         raise ValueError("没有 auth_token / ct0")
-    args = [CLI, *build(cmd, b), "--json"]
+    built = build(cmd, b)
+    # --json 必须放在 `--`（后面全是位置参数，比如搜索词）之前，放在最后会被当成多余的位置参数：Got unexpected extra argument (--json)
+    cut = built.index("--") if "--" in built else len(built)
+    args = [CLI, *built[:cut], "--json", *built[cut:]]
     # 只给子进程它需要的环境变量；故意不继承别的，也不让它去读浏览器 cookie
     env = {"PATH": os.environ.get("PATH", ""), "HOME": "/tmp", "TWITTER_AUTH_TOKEN": token, "TWITTER_CT0": ct0}
     if os.environ.get("TWITTER_PROXY"):
