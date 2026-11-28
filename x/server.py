@@ -83,6 +83,12 @@ def run(cmd: str, b: dict):
         tail = (p.stderr or out or "没有输出").strip().splitlines()[-3:]
         raise RuntimeError(f"twitter-cli 没给出 JSON（退出码 {p.returncode}）：{' / '.join(tail)}"[:400])
     if not d.get("ok"):
+        # 失败时把命令行自己打的日志（比如 Failed to init ClientTransaction）写进容器日志，方便查原因；先把登录信息抹掉
+        err = (p.stderr or "").strip()
+        for secret in (token, ct0):
+            err = err.replace(secret, "***")
+        if err:
+            print(f"/{cmd} twitter-cli 日志：{err[-700:]}", flush=True)
         e = d.get("error") or {}
         raise RuntimeError(f"{e.get('code', 'error')}：{e.get('message', '未知错误')}"[:400])
     return {"data": d.get("data"), "next": (d.get("pagination") or {}).get("nextCursor")}
